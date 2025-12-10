@@ -17,6 +17,9 @@ class TestDay1:
 	def test_right_rotation_end_at_0(self): 
 		assert 0 == Day1.rotate_dial(52, "R48")
 
+	def test_right_rotation_large_number(self): 
+		assert 0 == Day1.rotate_dial(50, "R450")
+
 	def test_left_rotation(self): 
 		assert 52 == Day1.rotate_dial(82, "L30")
 
@@ -28,6 +31,9 @@ class TestDay1:
 
 	def test_left_rotation_end_at_0(self): 
 		assert 0 == Day1.rotate_dial(55, "L55")
+
+	def test_left_rotation_large_number(self): 
+		assert 0 == Day1.rotate_dial(50, "L450")
 
 	def test_invalid_input_starting_position_negative(self): 
 		try: 
