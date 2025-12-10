@@ -2,6 +2,7 @@ class Day1:
     
 	@staticmethod
 	def count_times_dial_is_at_zero(input_fiename): 
+		content=''
         with open(input_fiename, 'r') as f:
 			content = f.read() 
 		lines = content.split()
