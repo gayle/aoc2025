@@ -36,21 +36,21 @@ def test_left_rotation_large_number():
 
 def test_invalid_input_starting_position_negative(): 
 	try: 
-		Day1.rotate(dial(-1, "R10"))
+		Day1.rotate_dial(-1, "R10")
 		assert False, "Starting position must be between 0 and 99"
 	except ValueError: 
 		pass
 
 def test_invalid_input_starting_position_greater_than_99(): 
 	try: 
-		Day1.rotate(dial(100, "R10"))
+		Day1.rotate_dial(100, "R10")
 		assert False, "Starting position must be between 0 and 99"
 	except ValueError: 
 		pass
 
 def test_invalid_input_letter(): 
 	try: 
-		Day1.rotate(dial(50, "X10"))
+		Day1.rotate_dial(50, "X10")
 		assert False, "Invalid direction; expected 'L' or 'R'"
 	except ValueError: 
 		pass
