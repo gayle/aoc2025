@@ -12,8 +12,8 @@ class Day1:
 		
 		for line in lines: 
 			position = Day1.rotate_dial(position, line)
-		if position == 0:
-			times_dial_is_at_zero += 1
+			if position == 0:
+				times_dial_is_at_zero += 1
 		
 		return times_dial_is_at_zero
 
