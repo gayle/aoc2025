@@ -1,8 +1,8 @@
 import pytest
 import tempfile 
 import sys, os
-sys.path.append(os.path.dirname('../src/'))
-from day1 import Day1 
+# sys.path.append(os.path.dirname('../src/'))
+from src.day1_pt1 import Day1 
 
 def test_right_rotation(): 
 	assert 12 == Day1.rotate_dial(5, "R7")
