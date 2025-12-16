@@ -1,7 +1,6 @@
 import pytest
 import tempfile
 import sys, os
-sys.path.append(os.path.dirname('../src/'))
 from day1_pt2 import Day1Pt2
 
 def test_right_rotation():
