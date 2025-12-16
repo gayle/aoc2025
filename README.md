@@ -14,7 +14,7 @@ Day1:
     The commands are similar for future days.
 
 Running the tests. This runs all files starting with "test_":
-    
+
     pytest
 
 Requirements:

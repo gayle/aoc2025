@@ -38,4 +38,4 @@ if __name__ == "__main__":
 		sys.exit(1)
 	input_filename = sys.argv[1]
 	result = Day1.count_times_dial_is_at_zero(input_filename)
-	print(result)
+	print(f"Day1 Part1 result: {result}")

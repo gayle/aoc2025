@@ -48,6 +48,5 @@ if __name__ == "__main__":
         print("Usage: python day1_pt2.py <input_filename>")
         sys.exit(1)
     input_filename = sys.argv[1]
-    (result1, result2) = Day1Pt2.count_times_dial_crosses_zero(input_filename)
-    print(f"part1 result:{result1}")
-    print(f"part2 result:{result2}")
+    result = Day1Pt2.count_times_dial_crosses_zero(input_filename)
+    print(f"Day1 Part2 result: {result}")
