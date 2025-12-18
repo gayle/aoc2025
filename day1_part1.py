@@ -1,4 +1,4 @@
-class Day1: 
+class Day1Part1: 
 
 	@staticmethod
 	def count_times_dial_is_at_zero(input_fiename): 
@@ -11,7 +11,7 @@ class Day1:
 		position = 50 # initial starting position
 		
 		for line in lines: 
-			position = Day1.rotate_dial(position, line)
+			position = Day1Part1.rotate_dial(position, line)
 			if position == 0:
 				times_dial_is_at_zero += 1
 		
@@ -37,5 +37,5 @@ if __name__ == "__main__":
 		print("Usage: python day1.py <input_filename>")
 		sys.exit(1)
 	input_filename = sys.argv[1]
-	result = Day1.count_times_dial_is_at_zero(input_filename)
+	result = Day1Part1.count_times_dial_is_at_zero(input_filename)
 	print(f"Day1 Part1 result: {result}")

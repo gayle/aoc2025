@@ -1,15 +1,15 @@
 # aoc2025
 
-Advent of Code 2025 (https://adventofcode.com/2025) solutions. This is in gayle's repository with dstautberg as a contributer.
+[Advent of Code 2025](https://adventofcode.com/2025) solutions. This is in gayle's repository with dstautberg as a contributer.
 
-To run the solution code from the top-level aoc2025 directory:
+Run the solution code from the top-level aoc2025 directory:
 
 Day1:
 
-    python day1_pt1.py day1-input-dean.txt
-    python day1_pt2.py day1-input-dean.txt
-    python day1_pt1.py day1-input-gayle.txt
-    python day1_pt2.py day1-input-gayle.txt
+    python day1_part1.py day1_input_dean.txt
+    python day1_part2.py day1_input_dean.txt
+    python day1_part1.py day1_input_gayle.txt
+    python day1_part2.py day1_input_gayle.txt
 
     The commands are similar for future days.
 

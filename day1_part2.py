@@ -1,4 +1,4 @@
-class Day1Pt2:
+class Day1Part2:
 
     @staticmethod
     def count_times_dial_crosses_zero(input_filename):
@@ -10,7 +10,7 @@ class Day1Pt2:
         lines = content.split()
         dial_position = 50 # Starting position
         for line in lines:
-            encountered_zero, dial_position = Day1Pt2.rotate_dial(dial_position, line)
+            encountered_zero, dial_position = Day1Part2.rotate_dial(dial_position, line)
             times_dial_crosses_zero += encountered_zero
         return times_dial_crosses_zero
 
@@ -48,5 +48,5 @@ if __name__ == "__main__":
         print("Usage: python day1_pt2.py <input_filename>")
         sys.exit(1)
     input_filename = sys.argv[1]
-    result = Day1Pt2.count_times_dial_crosses_zero(input_filename)
+    result = Day1Part2.count_times_dial_crosses_zero(input_filename)
     print(f"Day1 Part2 result: {result}")
