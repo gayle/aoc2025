@@ -9,14 +9,22 @@ class Day3Part1:
     
     @staticmethod
     def max_joltage(line):
-        return 0
-    
+        line = line.strip()
+        first_digit, second_digit = '0', '0'
+        for n, digit in enumerate(line):
+            if int(digit) > int(first_digit) and n < len(line) - 1:
+                first_digit = digit
+                second_digit = '0'
+            elif int(first_digit + digit) > int(first_digit + second_digit):
+                second_digit = digit
+        return int(first_digit + second_digit)
+
     @staticmethod
     def total_output_joltage(input_filename):
         lines = Day3Part1.parse_input(input_filename)
         total = 0
         for line in lines:
-            total += Day3Part1.max_joltage(line.strip())
+            total += Day3Part1.max_joltage(line)
         return total
     
 if __name__ == "__main__":
