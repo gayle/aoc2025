@@ -27,6 +27,10 @@ def test_234234234234278():
 def test_818181911112111():
     assert Day3Part2().max_joltage('818181911112111') == 888911112111
 
+def test_first_line_of_deans_real_input():
+    line = ' 1222222312332225132221222322223222212123112122221122321222132212122312222221212112222322211112122222'
+    assert Day3Part2().max_joltage(line) == 533333333222
+
 def test_total_output_joltage():
     input = '''
     987654321111111
