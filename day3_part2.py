@@ -15,10 +15,9 @@ class Day3Part2:
         joltage = '0' * 12 # max 12 digits
         for i, digit in enumerate(line):
             new_i = i
-            print("new_i: %d, digit: %s" % (i, digit)) if Day3Part2.DEBUG else None
+            print("new_i: %d, digit: %s" % (new_i, digit)) if Day3Part2.DEBUG else None
             joltage_non_zero_length = len(joltage.replace('0', ''))
-            print("len(line)[%d] - 1 - new_i[%d] + joltage_non_zero_length[%d]: %d" % (len(line), new_i, joltage_non_zero_length, len(line) - 1- 
-            new_i + joltage_non_zero_length)) if Day3Part2.DEBUG else None
+            print("len(line)[%d] - 1 - new_i[%d] + joltage_non_zero_length[%d]: %d" % (len(line), new_i, joltage_non_zero_length, len(line) - 1 - new_i + joltage_non_zero_length)) if Day3Part2.DEBUG else None
             # if joltage_non_zero_length >= 12:
                 # break
             if len(line) - 1 - new_i + joltage_non_zero_length < len(joltage): # We can't replace any more existing digits
@@ -36,7 +35,20 @@ class Day3Part2:
                         len(joltage[joltage_non_zero_length + 1:])
                         )
                     ) if Day3Part2.DEBUG else None
-                    temp_joltage = joltage[0:joltage_non_zero_length-1] + digit + joltage[joltage_non_zero_length:]
+                    print("joltage[0:joltage_non_zero_length - 1]: %s, len: %d, digit: %s, joltage[joltage_non_zero_length:]: %s, len: %d" % (
+                        joltage[0:joltage_non_zero_length - 1], 
+                        len(joltage[0:joltage_non_zero_length - 1]), 
+                        digit, 
+                        joltage[joltage_non_zero_length:], 
+                        len(joltage[joltage_non_zero_length:])
+                        )
+                    ) if Day3Part2.DEBUG else None
+                    temp_joltage = joltage[0:joltage_non_zero_length] + digit + joltage[joltage_non_zero_length + 1:]
+                    if int(temp_joltage) > int(joltage):
+                        joltage = temp_joltage
+                    else:
+                        temp_joltage = joltage[0:joltage_non_zero_length + 1] + digit + joltage[joltage_non_zero_length + 2:]
+                        joltage = temp_joltage
                 else: # joltage_non_zero_length == 0
                     print("in else") if Day3Part2.DEBUG else None
                     temp_joltage = digit + joltage[1:]
@@ -45,7 +57,7 @@ class Day3Part2:
                 if int(temp_joltage) > int(joltage):
                     joltage = temp_joltage
             print("joltage: %s, length: %d\n" % (joltage, len(joltage))) if Day3Part2.DEBUG else None
-        
+            
         print("returning joltage: %s" % joltage) if Day3Part2.DEBUG else None
         return int(joltage)
     
