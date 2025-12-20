@@ -1,7 +1,7 @@
 import sys, os
 
 class Day3Part2:
-    DEBUG = True
+    DEBUG = False
 
     @staticmethod
     def parse_input(input_filename):
@@ -43,12 +43,15 @@ class Day3Part2:
                         len(joltage[joltage_non_zero_length:])
                         )
                     ) if Day3Part2.DEBUG else None
-                    temp_joltage = joltage[0:joltage_non_zero_length] + digit + joltage[joltage_non_zero_length + 1:]
+                    temp_joltage = joltage[0:joltage_non_zero_length - 1] + digit + joltage[joltage_non_zero_length:]
                     if int(temp_joltage) > int(joltage):
+                        print(f"temp_joltage {temp_joltage} is > than joltage {joltage}") if Day3Part2.DEBUG else None
                         joltage = temp_joltage
                     else:
-                        temp_joltage = joltage[0:joltage_non_zero_length + 1] + digit + joltage[joltage_non_zero_length + 2:]
-                        joltage = temp_joltage
+                        temp_joltage = joltage[0:joltage_non_zero_length] + digit + joltage[joltage_non_zero_length + 1:]
+                        if int(temp_joltage) > int(joltage):
+                            print(f"temp_joltage {temp_joltage} is > than joltage {joltage}") if Day3Part2.DEBUG else None
+                            joltage = temp_joltage
                 else: # joltage_non_zero_length == 0
                     print("in else") if Day3Part2.DEBUG else None
                     temp_joltage = digit + joltage[1:]
