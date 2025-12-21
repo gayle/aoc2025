@@ -35,15 +35,14 @@ class Day4Part1:
             return adj_count < 4
     
     @staticmethod
-    def count_of_accessible_rolls(input_filename):
+    def accessible_rolls(input_filename):
         lines = Day4Part1.parse_input(input_filename)
-        count = 0
+        accessible_rolls = []
         for y in range(len(lines)):
             for x in range(len(lines[y])):
                 if Day4Part1.roll_is_accessible(x, y, lines):
-                    count += 1
-                    print(f"Accessible roll at ({x}, {y}), count = {count}") if Day4Part1.DEBUG else None
-        return count
+                    accessible_rolls.append((x, y))
+        return accessible_rolls
     
 if __name__ == "__main__":
     # If no filename is provided, try common input filenames before failing.
@@ -58,6 +57,6 @@ if __name__ == "__main__":
         else:
             print(f"Usage: python {sys.argv[0]} <input_filename>")
             sys.exit(1)
-    result = Day4Part1.count_of_accessible_rolls(input_filename)
+    result = len(Day4Part1.accessible_rolls(input_filename))
     print(f"Day 4 Part 1 result: {result}")
 

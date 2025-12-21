@@ -55,7 +55,7 @@ def test_2_0():
     assert Day4Part1().is_roll(2, 0, lines) == True
     assert Day4Part1().roll_is_accessible(2, 0, lines) == True
 
-def test_count_of_accessible_rolls():
+def test_accessible_rolls():
     input_txt = '''..@@.@@@@.
 @@@.@.@.@@
 @@@@@.@.@@
@@ -75,7 +75,7 @@ def test_count_of_accessible_rolls():
         tmp.flush()
         tmp_name = tmp.name
     try:
-        assert Day4Part1().count_of_accessible_rolls(tmp_name) == 13
+        assert len(Day4Part1().accessible_rolls(tmp_name)) == 13
     finally:
         try:
             os.unlink(tmp_name)
