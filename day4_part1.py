@@ -43,7 +43,11 @@ class Day4Part1:
                 if Day4Part1.roll_is_accessible(x, y, lines):
                     accessible_rolls.append((x, y))
         return accessible_rolls
-    
+
+    @staticmethod
+    def count_of_accessible_rolls(input_filename):
+        return len(Day4Part1.accessible_rolls(input_filename))
+
 if __name__ == "__main__":
     # If no filename is provided, try common input filenames before failing.
     if len(sys.argv) == 2:
@@ -57,6 +61,6 @@ if __name__ == "__main__":
         else:
             print(f"Usage: python {sys.argv[0]} <input_filename>")
             sys.exit(1)
-    result = len(Day4Part1.accessible_rolls(input_filename))
+    result = Day4Part1.count_of_accessible_rolls(input_filename)
     print(f"Day 4 Part 1 result: {result}")
 
