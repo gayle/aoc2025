@@ -1,7 +1,7 @@
 import sys, os
 
 class Day3Part2:
-    DEBUG = True
+    DEBUG = False
 
     @staticmethod
     def parse_input(input_filename):
@@ -18,65 +18,33 @@ class Day3Part2:
             print("new_i: %d, digit: %s" % (new_i, digit)) if Day3Part2.DEBUG else None
             joltage_non_zero_length = len(joltage.replace('0', ''))
             print("len(line)[%d] - 1 - new_i[%d] + joltage_non_zero_length[%d]: %d" % (len(line), new_i, joltage_non_zero_length, len(line) - 1 - new_i + joltage_non_zero_length)) if Day3Part2.DEBUG else None
-            if len(line) - 1 - new_i + joltage_non_zero_length < len(joltage): # We can't replace any more existing digits
-                joltage = joltage[0:i] + digit + joltage[joltage_non_zero_length+1:]
+            if len(line) - 1 - new_i + joltage_non_zero_length < len(joltage): 
+                # We can't replace any more existing digits, so we'll appended to what we already have
+                joltage = joltage[0:joltage_non_zero_length] + digit + joltage[joltage_non_zero_length+1:]
             else:
-                if joltage_non_zero_length == 0:
+                if joltage_non_zero_length == 0: # the first digit is an automatic addition
                     joltage = digit + joltage[1:]
                 else:
                     for j in range(joltage_non_zero_length + 1):
-                        if j == len(joltage):
+                        if j == len(joltage): # if we're at the max length of the result, we can only try to replace the last digit
                             temp_joltage = joltage[0:j-1] + digit
                         else:
                             temp_joltage = joltage[0:j] + digit + '0' * (len(joltage) - j - 1)
-                        print(f"i: {i}, j: {j}, digit: {digit}, joltage: {joltage}({len(joltage)}), temp_joltage: {temp_joltage}({len(temp_joltage)})") if Day3Part2.DEBUG else None
-                        print(f"temp_joltage.count('0'): {temp_joltage.count('0')}, len(line) - i - 1: {len(line) - j - 1}") if Day3Part2.DEBUG else None
+                        if Day3Part2.DEBUG:
+                            print(f"i: {i}, j: {j}, digit: {digit}, joltage: {joltage}({len(joltage)}), temp_joltage: {temp_joltage}({len(temp_joltage)})")
+                            print(f"temp_joltage.count('0'): {temp_joltage.count('0')}, len(line) - i - 1: {len(line) - j - 1}")
                         if temp_joltage.count('0') > len(line) - i - 1:
+                            # This handles situations like 811111111111119. When we get to the 9, and try to replace it as the first digit,
+                            # we get 900000000000, which is greater, but we don't have anymore digits to replace the 0's.
                             pass
                         elif temp_joltage > joltage:
                             print(f"temp_joltage {temp_joltage} is > than joltage {joltage}") if Day3Part2.DEBUG else None
                             joltage = temp_joltage
                             break
+
             print(f"joltage {joltage}({len(joltage)})\n") if Day3Part2.DEBUG else None
             if len(joltage) > 12:
                 break
-
-                #     print("in if") if Day3Part2.DEBUG else None
-                #     temp_joltage = joltage[0:joltage_non_zero_length - 1] + digit
-                # elif joltage_non_zero_length > 0:
-                #     print("in elif") if Day3Part2.DEBUG else None
-                #     print("joltage[0:joltage_non_zero_length]: %s, len: %d, joltage[joltage_non_zero_length + 1:]: %s, len: %d" % (
-                #         joltage[0:joltage_non_zero_length], 
-                #         len(joltage[0:joltage_non_zero_length]), 
-                #         joltage[joltage_non_zero_length + 1:], 
-                #         len(joltage[joltage_non_zero_length + 1:])
-                #         )
-                #     ) if Day3Part2.DEBUG else None
-                #     print("joltage[0:joltage_non_zero_length - 1]: %s, len: %d, digit: %s, joltage[joltage_non_zero_length:]: %s, len: %d" % (
-                #         joltage[0:joltage_non_zero_length - 1], 
-                #         len(joltage[0:joltage_non_zero_length - 1]), 
-                #         digit, 
-                #         joltage[joltage_non_zero_length:], 
-                #         len(joltage[joltage_non_zero_length:])
-                #         )
-                #     ) if Day3Part2.DEBUG else None
-                #     temp_joltage = joltage[0:joltage_non_zero_length - 1] + digit + joltage[joltage_non_zero_length:]
-                #     if int(temp_joltage) > int(joltage):
-                #         print(f"temp_joltage {temp_joltage} is > than joltage {joltage}") if Day3Part2.DEBUG else None
-                #         joltage = temp_joltage
-                #     else:
-                #         temp_joltage = joltage[0:joltage_non_zero_length] + digit + joltage[joltage_non_zero_length + 1:]
-                #         if int(temp_joltage) > int(joltage):
-                #             print(f"temp_joltage {temp_joltage} is > than joltage {joltage}") if Day3Part2.DEBUG else None
-                #             joltage = temp_joltage
-                # else: # joltage_non_zero_length == 0
-                #     print("in else") if Day3Part2.DEBUG else None
-                #     temp_joltage = digit + joltage[1:]
-            #     print("joltage[0:joltage_non_zero_length]: %s" % joltage[0:joltage_non_zero_length]) if Day3Part2.DEBUG else None
-            #     print("i: %d, new_i: %d, joltage_non_zero_length: %d, temp_joltage: %s(len %d), joltage: %s(len %d)" % (i, new_i, joltage_non_zero_length, temp_joltage, len(temp_joltage), joltage, len(joltage))) if Day3Part2.DEBUG else None
-            #     if int(temp_joltage) > int(joltage):
-            #         joltage = temp_joltage
-            # print("joltage: %s, length: %d\n" % (joltage, len(joltage))) if Day3Part2.DEBUG else None
 
         print("returning joltage: %s" % joltage) if Day3Part2.DEBUG else None
         return int(joltage)
@@ -87,7 +55,6 @@ class Day3Part2:
         total = 0
         for line in lines:
             total += Day3Part2.max_joltage(line)
-            input("Press Enter...") if Day3Part2.DEBUG else None
         return total
     
 if __name__ == "__main__":
