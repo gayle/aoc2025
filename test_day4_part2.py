@@ -127,3 +127,29 @@ from day4_part2 import Day4Part2
 
 # Stop once no more rolls of paper are accessible by a forklift. In this example, a total of 43 rolls of paper can be removed.
 
+def test_accessible_rolls():
+    input_txt = '''..@@.@@@@.
+@@@.@.@.@@
+@@@@@.@.@@
+@.@@@@..@.
+@@.@@@@.@@
+.@@@@@@@.@
+.@.@.@.@@@
+@.@@@.@@@@
+.@@@@@@@@.
+@.@.@@@.@.
+'''
+    # On Windows the default NamedTemporaryFile can't be reopened by name
+    # by another open() call; create the file with delete=False and
+    # remove it after the assertion.
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False) as tmp:
+        tmp.write(input_txt)
+        tmp.flush()
+        tmp_name = tmp.name
+    try:
+        assert Day4Part2.total_rolls_removed(tmp_name) == 43
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except Exception:
+            pass
