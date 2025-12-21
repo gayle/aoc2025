@@ -5,17 +5,39 @@ class Day6Part1:
 
     @staticmethod
     def parse_input(input_text):
-        lines = [line.strip() for line in input_text.splitlines()]
+        lines = input_text.splitlines()
         problems = []
-        for line in lines:
-            split = line.split()
-            for n, s in enumerate(split):
-                if s.isdigit():
-                    if n >= len(problems):
-                        problems.append(int(s))
-                else:
-                    problems[n] = s
+        for i, line in enumerate(lines):
+            print(f"line: {line}") if Day6Part1.DEBUG else None
+            for j, item in enumerate(line.split()):
+                if len(problems) <= j:
+                    problems.append([])
+                item = int(item) if item.isdigit() else item
+                problems[j].append(item)
+                print(f"problems: {problems}") if Day6Part1.DEBUG else None
         return problems
+
+    @staticmethod
+    def solve_problem(problem):
+        print(f"problem: {problem}") if Day6Part1.DEBUG else None
+        operation = problem[-1]
+        numbers = problem[0:-1]
+        print(f"problem: {problem} operation: {operation} numbers: {numbers}") if Day6Part1.DEBUG else None
+        if operation == '*':
+            result = 1
+            for num in numbers:
+                result *= num
+        elif operation == '+':
+            result = sum(numbers)
+        return result
+
+    @staticmethod
+    def total_result(problems):
+        total = 0
+        for problem in problems:
+            result = Day6Part1.solve_problem(problem)
+            total += result
+        return total
 
 if __name__ == "__main__":
     # If no filename is provided, try common input filenames before failing.

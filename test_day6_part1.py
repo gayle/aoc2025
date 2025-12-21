@@ -29,12 +29,26 @@ input_text = '''123 328  51 64
 *   +   *   +  
 '''
 
-def parse_input(input_text):
+def test_solve_problem0():
     problems = Day6Part1.parse_input(input_text)
     assert problems[0] == [123, 45, 6, '*']
-    assert problems[0] == [328, 64, 98, '+']
-    assert problems[0] == [51, 387, 215, '*']
-    assert problems[0] == [64, 23, 314, '+']
+    assert Day6Part1.solve_problem(problems[0]) == 33210
 
+def test_solve_problem1():
+    problems = Day6Part1.parse_input(input_text)
+    assert problems[1] == [328, 64, 98, '+']
+    assert Day6Part1.solve_problem(problems[1]) == 490
 
+def test_solve_problem2():
+    problems = Day6Part1.parse_input(input_text)
+    assert problems[2] == [51, 387, 215, '*']
+    assert Day6Part1.solve_problem(problems[2]) == 4243455
 
+def test_solve_problem3():
+    problems = Day6Part1.parse_input(input_text)
+    assert problems[3] == [64, 23, 314, '+']
+    assert Day6Part1.solve_problem(problems[3]) == 401
+
+def test_total_result():
+    problems = Day6Part1.parse_input(input_text)
+    assert Day6Part1.total_result(problems) == 4277556
