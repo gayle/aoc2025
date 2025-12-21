@@ -15,18 +15,20 @@ class Day5Part1:
                 else:
                     range = line.split('-')
                     ranges.append([int(range[0]), int(range[1])])
-                    print(ranges)
+                    print(ranges) if Day5Part1.DEBUG else None
             else:
                 ids.append(int(line))
-                print(ids)
+                print(ids) if Day5Part1.DEBUG else None
         return ranges, ids
 
     @staticmethod
     def fresh_ingredient_count(ranges, ids):
         count = 0
-        
-        
-
+        for id in ids:
+            for range in ranges:
+                if range[0] <= id <= range[1]:
+                    count += 1
+                    break
         return count
 
 if __name__ == "__main__":
@@ -42,7 +44,7 @@ if __name__ == "__main__":
         else:
             print(f"Usage: python {sys.argv[0]} <input_filename>")
             sys.exit(1)
-    print()
+  
     input_text = open(input_filename).read()
     ranges, ids = Day5Part1.parse_input(input_text)     
     result = Day5Part1.fresh_ingredient_count(ranges, ids)

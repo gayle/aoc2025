@@ -48,6 +48,6 @@ def test_parse_input():
     assert fresh_ranges == [[3, 5], [10, 14], [16, 20], [12, 18]]
     assert available_ids == [1, 5, 8, 11, 17, 32]
 
-def test_count_fresh_ids():
+def test_fresh_ingredient_count():
     ranges, ids = Day5Part1.parse_input(input)
-    assert Day5Part1.count_fresh_ids(ranges, ids) == 3
+    assert Day5Part1.fresh_ingredient_count(ranges, ids) == 3
