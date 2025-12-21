@@ -6,11 +6,17 @@ class Day4Part2:
 
     @staticmethod
     def total_rolls_removed(input_filename):
-        accessible_rolls = Day4Part1.accessible_rolls(input_filename)
+        lines = Day4Part1.read_input_file(input_filename)
         total_rolls_removed = 0
-        
-        for roll in accessible_rolls:
-            pass
+        while True:
+            accessible_rolls = Day4Part1.accessible_rolls(lines)
+            if len(accessible_rolls) == 0:
+                break
+            for roll in accessible_rolls:
+                line = lines[roll[1]]
+                lines[roll[1]] = line[:roll[0]] + "x" + line[roll[0]+1:] # replace the @ with an x
+                total_rolls_removed += 1
+            break
 
         return total_rolls_removed
 

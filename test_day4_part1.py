@@ -75,7 +75,8 @@ def test_accessible_rolls():
         tmp.flush()
         tmp_name = tmp.name
     try:
-        assert len(Day4Part1().accessible_rolls(tmp_name)) == 13
+        Day4Part1.parse_input(tmp_name)
+        assert len(Day4Part1.accessible_rolls(lines)) == 13
     finally:
         try:
             os.unlink(tmp_name)
