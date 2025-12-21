@@ -59,7 +59,6 @@ class Day3Part2:
     
 if __name__ == "__main__":
     # If no filename is provided, try common input filenames before failing.
-    print(sys.argv)
     if len(sys.argv) == 2:
         input_filename = sys.argv[1]
     else:
