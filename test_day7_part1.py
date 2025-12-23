@@ -82,26 +82,7 @@ input_text = """.......S.......
 ...............
 """
 
-def test_solve_problem0():
-    problems = Day7Part1.parse_input(input_text)
-    assert problems[0] == [4, 431, 623, '+']
-    assert Day7Part1.solve_problem(problems[0]) == 1058
-
-def test_solve_problem1():
-    problems = Day7Part1.parse_input(input_text)
-    assert problems[1] == [175, 581, 32, '*']
-    assert Day7Part1.solve_problem(problems[1]) == 3253600
-
-def test_solve_problem2():
-    problems = Day7Part1.parse_input(input_text)
-    assert problems[2] == [8, 248, 369, '+']
-    assert Day7Part1.solve_problem(problems[2]) == 625
-
-def test_solve_problem3():
-    problems = Day7Part1.parse_input(input_text)
-    assert problems[3] == [356, 24, 1, '*']
-    assert Day7Part1.solve_problem(problems[3]) == 8544
-
 def test_total_result():
-    problems = Day7Part1.parse_input(input_text)
-    assert Day7Part1.total_result(problems) == 3263827
+    lines = Day7Part1.parse_input(input_text)
+    assert Day7Part1.iterate_tachyon_beam(lines) == 21
+    

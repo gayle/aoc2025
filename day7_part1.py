@@ -6,63 +6,64 @@ class Day7Part1:
 
     @staticmethod
     def parse_input(input_text):
-        lines = input_text.splitlines()
-        max_col_index = 0 # index of right-most column
-        for line in lines:
-            print(f"'{line}'") if Day7Part1.DEBUG else None
-            max_col_index = len(line) if len(line) > max_col_index else max_col_index
-        max_col_index -= 1
-        print(f"max_col_index={max_col_index}") if Day7Part1.DEBUG else None  
-        num_count = len(lines) - 1 # If there are 4 lines of input, the first 3 are numbers
-        op_index = len(lines) - 1  # Index 3 is the line of operations on the numbers (+ or *)
-        problems = [ [] ]
-        problem_index = 0
-        
-        for col in range(max_col_index, -1, -1): # Step from max_col_index (14) down to 0
-            digits, operation = '', ''
-            for i in range(len(lines)):
-                print(f"i={i}, col={col}, len(lines[{i}])={len(lines[i])}, {lines[i]}") if Day7Part1.DEBUG else None
-                if col < len(lines[i]):
-                    digit = lines[i][col]
-                else:
-                    digit = '' # some lines appear to be a character shorter
-                if digit.isdigit():
-                    digits += digit
-                    print(f"Found digit {digit}, digits is now {digits}") if Day7Part1.DEBUG else None
-                elif digit in ['+', '*']:
-                    operation = digit
-            if not digits: # there was nothing in this column
-                print(f"Ended problem[{problem_index}]: {problems[problem_index]}") if Day7Part1.DEBUG else None
-                problems.append([])
-                problem_index += 1
+        return input_text.splitlines()
+
+    @staticmethod
+    def find_items(line, item): # item = beams (|) or splitters (^)
+        items = []
+        search_start = 0
+        while True:
+            n = line.find(item, search_start)
+            if n >= 0:
+                items.append(n)
+                search_start = n + 1
             else:
-                print(f"Appending {digits} to problems[{problem_index}]") if Day7Part1.DEBUG else None
-                problems[problem_index].append(int(digits))
-                if operation:
-                    problems[problem_index].append(operation)
-        
-        return problems
+                break
+        return items
+    
+# .......S.......
+# .......|.......
+# .......^.......
+# ...............
+# ......^.^......
+# ...............
+# .....^.^.^.....
+# ...............
+# ....^.^...^....
+# ...............
+# ...^.^...^.^...
+# ...............
+# ..^...^.....^..
+# ...............
+# .^.^.^.^.^...^.
+# ...............
 
     @staticmethod
-    def solve_problem(problem):
-        operation = problem[-1]
-        numbers = problem[0:-1]
-        print(f"problem: {problem} operation: {operation} numbers: {numbers}") if Day7Part1.DEBUG else None
-        if operation == '*':
-            result = 1
-            for num in numbers:
-                result *= num
-        elif operation == '+':
-            result = sum(numbers)
-        return result
-
-    @staticmethod
-    def total_result(problems):
-        total = 0
-        for problem in problems:
-            result = Day7Part1.solve_problem(problem)
-            total += result
-        return total
+    def iterate_tachyon_beam(lines):
+        split_count = 0
+        start = lines[0].find('S')
+        for n, line in enumerate(lines):
+            if n == 0: # npthing to do on the start line
+                continue
+            print("\n") if Day7Part1.DEBUG else None
+            print(f"n={n}, prev_line={lines[n-1]}") if Day7Part1.DEBUG else None
+            print(f"n={n}, line={line}") if Day7Part1.DEBUG else None
+            prev_beams = Day7Part1.find_items(lines[n-1], '|')
+            print(f"prev_beams: {prev_beams}") if Day7Part1.DEBUG else None
+            if len(prev_beams) == 0: # previous line was the start line
+                lines[n] = line[:start] + '|' + line[start+1:]
+            else:
+                splitters = Day7Part1.find_items(line, '^')
+                print(f"splitters: {splitters}") if Day7Part1.DEBUG else None
+                for beam in prev_beams:
+                    # Check if beam is hitting a splitter. If so, split it. If not, keep it going.
+                    if beam in splitters:
+                        lines[n] = lines[n][:beam-1] + '|' + lines[n][beam] + '|' + lines[n][beam+2:]
+                        split_count += 1
+                    else:
+                        lines[n] = lines[n][:beam] + '|' + lines[n][beam+1:]
+            print(f"New line: {lines[n]}") if Day7Part1.DEBUG else None
+        return split_count
 
 if __name__ == "__main__":
     # If no filename is provided, try common input filenames before failing.
@@ -79,7 +80,7 @@ if __name__ == "__main__":
             sys.exit(1)
   
     input_text = open(input_filename).read()
-    problems = Day7Part1.parse_input(input_text)     
-    result = Day7Part1.total_result(problems)
+    lines = Day7Part1.parse_input(input_text)     
+    result = Day7Part1.iterate_tachyon_beam(lines)
     print(f"Day 7 Part 1 result: {result}")
 
