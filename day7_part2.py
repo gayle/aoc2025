@@ -1,4 +1,5 @@
 import sys, os
+from copy import deepcopy
 
 class Day7Part2:
     DEBUG = True
@@ -37,34 +38,70 @@ class Day7Part2:
     # .^.^.^.^.^...^.
     # ...............
 
-    '''This looks like it will need recursion. The recursion will be somewhere in the iterate_tachyon_beam method, but the challenge will be figuring out where, whether it's calling the whole method recursively, or just part of it. But then we'll have to keep a counter of each time we recurse, and bubble that up to be the final result.'''
+    @staticmethod
+    def iterate(lines, n, count, indent):
+        if Day7Part2.DEBUG:
+            print("\n")
+            if n == 12 and count == 12:
+                print('-'*100)
+            print(f"{indent}n: {n}, count: {count}, len(lines): {len(lines)}")
+        if n == len(lines):
+            if Day7Part2.DEBUG:
+                print(f"{indent}Hit end of input")
+                for i in range(n):
+                    print(f"{indent}{str(i).zfill(2)} {lines[i]}")
+                print(f"{indent}1 Returning count {count}")
+                print('-'*100)
+            return count
+        prev_beams = Day7Part2.find_items(lines[n-1], '|')
+        splitters = Day7Part2.find_items(lines[n], '^')
+        if Day7Part2.DEBUG:
+            for i in range(n-1):
+                print(f"{indent}{str(i).zfill(2)} {lines[i]}")
+            print(f"{indent}{str(n-1).zfill(2)} {lines[n-1]}, prev_beams: {prev_beams}")
+            print(f"{indent}{str(n).zfill(2)} {lines[n]},  splitters: {splitters}")
+        if len(prev_beams) > 1:
+            print(f"Error: Beams should be 1. Was {len(prev_beams)}.")
+        if splitters:
+            no_splitter = True
+            for splitter in splitters:
+                if splitter in prev_beams:
+                    no_splitter = False
+                    left_lines = deepcopy(lines)
+                    left_lines[n] = lines[n][0:splitter-1] + '|' + lines[n][splitter:]
+                    if Day7Part2.DEBUG:
+                        print(f"{indent}Recursing left")
+                    count = Day7Part2.iterate(left_lines, n+1, count+1, indent+'  ') # propagate left
+                    if Day7Part2.DEBUG:
+                        print(f"{indent}Returned from recursing left, n: {n}")
+                    right_lines = deepcopy(lines)
+                    right_lines[n] = lines[n][0:splitter+1] + '|' + lines[n][splitter+2:]
+                    if Day7Part2.DEBUG:
+                        print(f"{indent}Recursing right")
+                    count = Day7Part2.iterate(right_lines, n+1, count+1, indent+'  ') # propagate right
+                    if Day7Part2.DEBUG:
+                        print(f"{indent}Returned from recursing right, n: {n}")
+            if no_splitter: # We didn't hit a splitter, so propagate down
+                lines[n] = lines[n][0:prev_beams[0]] + '|' + lines[n][prev_beams[0]+1:]
+                if Day7Part2.DEBUG:
+                    print(f"{indent}1 Iterating down:")
+                count = Day7Part2.iterate(lines, n+1, count, indent)
+        else: # There were no splitters, so propagate down
+            lines[n] = lines[n][0:prev_beams[0]] + '|' + lines[n][prev_beams[0]+1:]
+            if Day7Part2.DEBUG:
+                print(f"{indent}2 Iterating down:")
+            count = Day7Part2.iterate(lines, n+1, count, indent)
+        if Day7Part2.DEBUG:
+            print(f"{indent}2 n:{n}, Returning count: {count}")
+            print('-'*100)
+        return count
 
     @staticmethod
     def iterate_tachyon_beam(lines):
-        split_count = 0
         start = lines[0].find('S')
-        for n, line in enumerate(lines):
-            if n == 0: # npthing to do on the start line
-                continue
-            print("\n") if Day7Part2.DEBUG else None
-            print(f"n={n}, prev_line={lines[n-1]}") if Day7Part2.DEBUG else None
-            print(f"n={n}, line={line}") if Day7Part2.DEBUG else None
-            prev_beams = Day7Part2.find_items(lines[n-1], '|')
-            print(f"prev_beams: {prev_beams}") if Day7Part2.DEBUG else None
-            if len(prev_beams) == 0: # previous line was the start line
-                lines[n] = line[:start] + '|' + line[start+1:]
-            else:
-                splitters = Day7Part2.find_items(line, '^')
-                print(f"splitters: {splitters}") if Day7Part2.DEBUG else None
-                for beam in prev_beams:
-                    # Check if beam is hitting a splitter. If so, split it. If not, keep it going.
-                    if beam in splitters:
-                        lines[n] = lines[n][:beam-1] + '|' + lines[n][beam] + '|' + lines[n][beam+2:]
-                        split_count += 1
-                    else:
-                        lines[n] = lines[n][:beam] + '|' + lines[n][beam+1:]
-            print(f"New line: {lines[n]}") if Day7Part2.DEBUG else None
-        return split_count
+        lines[1] = lines[1][:start] + '|' + lines[1][start+1:]
+        timeline_count = Day7Part2.iterate(lines, 2, 0, '')
+        return timeline_count
 
 if __name__ == "__main__":
     # If no filename is provided, try common input filenames before failing.
