@@ -71,13 +71,15 @@ class Day7Part2:
                     left_lines[n] = lines[n][0:splitter-1] + '|' + lines[n][splitter:]
                     if Day7Part2.DEBUG:
                         print(f"{indent}Recursing left")
-                    count = Day7Part2.iterate(left_lines, n+1, count+1, indent+'  ') # propagate left
+                    # Recursing left uses the same timeline, so we don't increase the count
+                    count = Day7Part2.iterate(left_lines, n+1, count, indent+'  ') # propagate left
                     if Day7Part2.DEBUG:
                         print(f"{indent}Returned from recursing left, n: {n}")
                     right_lines = deepcopy(lines)
                     right_lines[n] = lines[n][0:splitter+1] + '|' + lines[n][splitter+2:]
                     if Day7Part2.DEBUG:
                         print(f"{indent}Recursing right")
+                    # Recursing right starts a new timeline, so we increase the count
                     count = Day7Part2.iterate(right_lines, n+1, count+1, indent+'  ') # propagate right
                     if Day7Part2.DEBUG:
                         print(f"{indent}Returned from recursing right, n: {n}")
@@ -100,7 +102,7 @@ class Day7Part2:
     def iterate_tachyon_beam(lines):
         start = lines[0].find('S')
         lines[1] = lines[1][:start] + '|' + lines[1][start+1:]
-        timeline_count = Day7Part2.iterate(lines, 2, 0, '')
+        timeline_count = Day7Part2.iterate(lines, 2, 1, '') # Start count at 1, since there's 1 timeline to start
         return timeline_count
 
 if __name__ == "__main__":
