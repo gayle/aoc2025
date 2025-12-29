@@ -1,9 +1,11 @@
-import sys, os
+import sys, os, time
 from copy import deepcopy
 
 class Day7Part2:
-    DEBUG = True
-
+    DEBUG = False
+    last_progress_print_time = time.time()
+    last_count = 0
+     
     @staticmethod
     def parse_input(input_text):
         return input_text.splitlines()
@@ -20,7 +22,15 @@ class Day7Part2:
             else:
                 break
         return items
-    
+    @staticmethod
+    def print_progress(count):
+        now = time.time()
+        if now - Day7Part2.last_progress_print_time > 2.0:
+            rate = (count - Day7Part2.last_count) / (now - Day7Part2.last_progress_print_time)
+            print(f"{count:,}, {rate:,.0f} splits/sec", end="\r") # progress indicator
+            Day7Part2.last_progress_print_time = now
+            Day7Part2.last_count = count
+        
     # .......S.......
     # .......|.......
     # .......^.......
@@ -40,6 +50,7 @@ class Day7Part2:
 
     @staticmethod
     def iterate(lines, n, count, indent):
+        Day7Part2.print_progress(count)
         if Day7Part2.DEBUG:
             print("\n")
             if n == 12 and count == 12:
@@ -67,6 +78,9 @@ class Day7Part2:
             for splitter in splitters:
                 if splitter in prev_beams:
                     no_splitter = False
+                    # Optimization idea: Instead of using deepcopy, create left_lines with index 0 through n-1 as blank, then 
+                    # copy n (modified) and the rest as is. I don't think I need to make a copy of all the [n+1:] lines, because
+                    # they will get copied when I modify them later.
                     left_lines = deepcopy(lines)
                     left_lines[n] = lines[n][0:splitter-1] + '|' + lines[n][splitter:]
                     if Day7Part2.DEBUG:
