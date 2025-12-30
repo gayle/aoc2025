@@ -51,7 +51,7 @@ class Day7Part2:
     def iterate(lines, all_splitters, current_line, current_column, indent):
         if Day7Part2.DEBUG:
             print("\n")
-            if current_line == 12 and count == 12:
+            if current_line == 12:
                 print('-'*100)
             print(f"{indent}current_line: {current_line}, len(lines): {len(lines)}")
 
