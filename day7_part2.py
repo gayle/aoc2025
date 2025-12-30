@@ -55,10 +55,12 @@ class Day7Part2:
                 print('-'*100)
             print(f"{indent}current_line: {current_line}, count: {count}, len(lines): {len(lines)}")
 
+        # Once we reach the end, that's one timeline
         if current_line == len(lines):
             if Day7Part2.DEBUG:
                 print(f"{indent}Hit end of input current_line: {current_line}")
-            count = 1
+            count = 1 
+        # If there's a splitter at this position, we need to split and go left and right
         elif current_column in all_splitters[current_line]: 
             if Day7Part2.DEBUG:
                 print(f"{indent}Iterating left and right, count: {count} lines[current_line]: {lines[current_line]} current_column: {current_column}")
@@ -67,6 +69,7 @@ class Day7Part2:
             if Day7Part2.DEBUG:
                 print(f"{indent}count_left: {count_left}, count_right: {count_right}")
             count = (count_left + count_right)
+        # Otherwise there's no splitter, just move down
         else: 
             if Day7Part2.DEBUG:
                 print(f"{indent}No splitters at this point, moving down, count: {count} lines[current_line]: {lines[current_line]} current_column: {current_column}")
@@ -76,8 +79,10 @@ class Day7Part2:
             print(f"{indent}2 current_line:{current_line}, Returning count: {count}")
             print('-'*100)
 
+        # These attempts at a progress indicator don't work very well
         # Day7Part2.print_progress(count) # This doesn't work w/ the current implementation :( 
         # print(".", end="") if current_line == 142 else None # simple progress indicator, every time it gets to the last line of the file.  This is still a lot and is not very useful. 
+
         return count
 
     @staticmethod
