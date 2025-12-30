@@ -71,7 +71,7 @@ class Day7Part2:
                 print(f"{indent}{str(i).zfill(2)} {lines[i]}")
             print(f"{indent}{str(n-1).zfill(2)} {lines[n-1]}, prev_beams: {prev_beams}")
             print(f"{indent}{str(n).zfill(2)} {lines[n]},  splitters: {splitters}")
-        if len(prev_beams) > 1:
+        if len(prev_beams) != 1:
             print(f"Error: Beams should be 1. Was {len(prev_beams)}.")
         if splitters:
             no_splitter = True
@@ -81,16 +81,21 @@ class Day7Part2:
                     # Optimization idea: Instead of using deepcopy, create left_lines with index 0 through n-1 as blank, then 
                     # copy n (modified) and the rest as is. I don't think I need to make a copy of all the [n+1:] lines, because
                     # they will get copied when I modify them later.
-                    left_lines = deepcopy(lines)
-                    left_lines[n] = lines[n][0:splitter-1] + '|' + lines[n][splitter:]
+                    left_lines = ['.'] * n # We don't need the lines before row n
+                    left_lines.append(lines[n][0:splitter-1] + '|' + lines[n][splitter:])
+                    for line in lines[n+1:]:
+                        left_lines.append(line) # Carry over the rest of the lines as-is
                     if Day7Part2.DEBUG:
                         print(f"{indent}Recursing left")
                     # Recursing left uses the same timeline, so we don't increase the count
                     count = Day7Part2.iterate(left_lines, n+1, count, indent+'  ') # propagate left
                     if Day7Part2.DEBUG:
                         print(f"{indent}Returned from recursing left, n: {n}")
-                    right_lines = deepcopy(lines)
-                    right_lines[n] = lines[n][0:splitter+1] + '|' + lines[n][splitter+2:]
+                    
+                    right_lines = ['.'] * n # We don't need the lines before row n
+                    right_lines.append(lines[n][0:splitter+1] + '|' + lines[n][splitter+2:])
+                    for line in lines[n+1:]:
+                        right_lines.append(line) # Carry over the rest of the lines as-is
                     if Day7Part2.DEBUG:
                         print(f"{indent}Recursing right")
                     # Recursing right starts a new timeline, so we increase the count
