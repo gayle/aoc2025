@@ -73,7 +73,8 @@ class Day7Part2:
             count = Day7Part2.iterate(lines, all_splitters, current_line+1, current_column, indent+'  ')
 
         if Day7Part2.DEBUG:
-            print(f"{indent}returning count: {count}")
+            print(f"{indent}2 current_line:{current_line}, Returning count: {count}")
+            print('-'*100)
 
         # Day7Part2.print_progress(count) # This doesn't work w/ the current implementation :( 
         # print(".", end="") if current_line == 142 else None # simple progress indicator, every time it gets to the last line of the file.  This is still a lot and is not very useful. 
