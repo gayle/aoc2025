@@ -2,7 +2,7 @@ import sys, os, time
 from copy import deepcopy
 
 class Day7Part2:
-    DEBUG = False
+    DEBUG = True
     start_time = time.time()
     last_progress_time = start_time
     
@@ -53,7 +53,7 @@ class Day7Part2:
             print("\n")
             if current_line == 12 and count == 12:
                 print('-'*100)
-            print(f"{indent}current_line: {current_line}, count: {count}, len(lines): {len(lines)}")
+            print(f"{indent}current_line: {current_line}, len(lines): {len(lines)}")
 
         # Once we reach the end, that's one timeline
         if current_line == len(lines):
@@ -63,7 +63,7 @@ class Day7Part2:
         # If there's a splitter at this position, we need to split and go left and right
         elif current_column in all_splitters[current_line]: 
             if Day7Part2.DEBUG:
-                print(f"{indent}Iterating left and right, count: {count} lines[current_line]: {lines[current_line]} current_column: {current_column}")
+                print(f"{indent}Iterating left and right, lines[current_line]: {lines[current_line]} current_column: {current_column}")
             count_left = Day7Part2.iterate(lines, all_splitters, current_line+1, current_column-1, indent+'  ') # left
             count_right = Day7Part2.iterate(lines, all_splitters, current_line+1, current_column+1, indent+'  ') # right
             if Day7Part2.DEBUG:
@@ -72,7 +72,7 @@ class Day7Part2:
         # Otherwise there's no splitter, just move down
         else: 
             if Day7Part2.DEBUG:
-                print(f"{indent}No splitters at this point, moving down, count: {count} lines[current_line]: {lines[current_line]} current_column: {current_column}")
+                print(f"{indent}No splitters at this point, moving down, lines[current_line]: {lines[current_line]} current_column: {current_column}")
             count = Day7Part2.iterate(lines, all_splitters, current_line+1, current_column, indent+'  ')
 
         if Day7Part2.DEBUG:
