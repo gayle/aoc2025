@@ -1,8 +1,9 @@
 import sys, os, time
 from copy import deepcopy
+from rich.console import Console
 
 class Day7Part2:
-    DEBUG = True
+    DEBUG = False
     start_time = time.time()
     last_progress_time = start_time
     
@@ -97,7 +98,7 @@ class Day7Part2:
         timeline_count = Day7Part2.iterate(lines, all_splitters, current_line, current_column, '') # Start count at 1, since there's 1 timeline to start
 
         e_time = time.time()
-        print(f"iterate_tachyon_beam took {e_time - st_time} seconds")
+        console.log(f"iterate_tachyon_beam took {e_time - st_time} seconds")
         return timeline_count
 
 if __name__ == "__main__":
@@ -114,8 +115,12 @@ if __name__ == "__main__":
             print(f"Usage: python {sys.argv[0]} <input_filename>")
             sys.exit(1)
   
-    input_text = open(input_filename).read()
-    lines = Day7Part2.parse_input(input_text)     
-    result = Day7Part2.iterate_tachyon_beam(lines)
-    print(f"Day 7 Part 2 result: {result}")
-
+    console = Console()
+    with console.status("Processing..."):
+        input_text = open(input_filename).read()
+        console.log("input read")
+        lines = Day7Part2.parse_input(input_text)     
+        console.log("input parsed")
+        console.log("iterating beams...")
+        result = Day7Part2.iterate_tachyon_beam(lines)
+        console.log(f"Day 7 Part 2 result: {result}")
