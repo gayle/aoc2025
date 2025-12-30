@@ -3,15 +3,15 @@ from copy import deepcopy
 
 class Day7Part2:
     DEBUG = False
-    last_progress_print_time = time.time()
-    last_count = 0
-     
+    start_time = time.time()
+    last_progress_time = start_time
+    
     @staticmethod
     def parse_input(input_text):
         return input_text.splitlines()
 
     @staticmethod
-    def find_items(line, item): # item = beams (|) or splitters (^)
+    def find_item_indices(line, item): # item = beams (|) or splitters (^)
         items = []
         search_start = 0
         while True:
@@ -25,11 +25,10 @@ class Day7Part2:
     @staticmethod
     def print_progress(count):
         now = time.time()
-        if now - Day7Part2.last_progress_print_time > 2.0:
-            rate = (count - Day7Part2.last_count) / (now - Day7Part2.last_progress_print_time)
+        if now - Day7Part2.last_progress_time > 2.0:
+            rate = count / (now - Day7Part2.start_time)
             print(f"{count:,}, {rate:,.0f} splits/sec", end="\r") # progress indicator
-            Day7Part2.last_progress_print_time = now
-            Day7Part2.last_count = count
+            Day7Part2.last_progress_time = now
         
     # .......S.......
     # .......|.......
@@ -49,7 +48,7 @@ class Day7Part2:
     # ...............
 
     @staticmethod
-    def iterate(lines, n, count, indent):
+    def iterate(lines, all_splitters, n, count, indent):
         Day7Part2.print_progress(count)
         if Day7Part2.DEBUG:
             print("\n")
@@ -64,8 +63,8 @@ class Day7Part2:
                 print(f"{indent}1 Returning count {count}")
                 print('-'*100)
             return count
-        prev_beams = Day7Part2.find_items(lines[n-1], '|')
-        splitters = Day7Part2.find_items(lines[n], '^')
+        prev_beams = Day7Part2.find_item_indices(lines[n-1], '|')
+        splitters = all_splitters[n] # Day7Part2.find_item_indices(lines[n], '^')
         if Day7Part2.DEBUG:
             for i in range(n-1):
                 print(f"{indent}{str(i).zfill(2)} {lines[i]}")
@@ -88,7 +87,7 @@ class Day7Part2:
                     if Day7Part2.DEBUG:
                         print(f"{indent}Recursing left")
                     # Recursing left uses the same timeline, so we don't increase the count
-                    count = Day7Part2.iterate(left_lines, n+1, count, indent+'  ') # propagate left
+                    count = Day7Part2.iterate(left_lines, all_splitters, n+1, count, indent+'  ') # propagate left
                     if Day7Part2.DEBUG:
                         print(f"{indent}Returned from recursing left, n: {n}")
                     
@@ -99,19 +98,19 @@ class Day7Part2:
                     if Day7Part2.DEBUG:
                         print(f"{indent}Recursing right")
                     # Recursing right starts a new timeline, so we increase the count
-                    count = Day7Part2.iterate(right_lines, n+1, count+1, indent+'  ') # propagate right
+                    count = Day7Part2.iterate(right_lines, all_splitters, n+1, count+1, indent+'  ') # propagate right
                     if Day7Part2.DEBUG:
                         print(f"{indent}Returned from recursing right, n: {n}")
             if no_splitter: # We didn't hit a splitter, so propagate down
                 lines[n] = lines[n][0:prev_beams[0]] + '|' + lines[n][prev_beams[0]+1:]
                 if Day7Part2.DEBUG:
                     print(f"{indent}1 Iterating down:")
-                count = Day7Part2.iterate(lines, n+1, count, indent)
+                count = Day7Part2.iterate(lines, all_splitters, n+1, count, indent)
         else: # There were no splitters, so propagate down
             lines[n] = lines[n][0:prev_beams[0]] + '|' + lines[n][prev_beams[0]+1:]
             if Day7Part2.DEBUG:
                 print(f"{indent}2 Iterating down:")
-            count = Day7Part2.iterate(lines, n+1, count, indent)
+            count = Day7Part2.iterate(lines, all_splitters, n+1, count, indent)
         if Day7Part2.DEBUG:
             print(f"{indent}2 n:{n}, Returning count: {count}")
             print('-'*100)
@@ -119,9 +118,11 @@ class Day7Part2:
 
     @staticmethod
     def iterate_tachyon_beam(lines):
+        all_splitters = [Day7Part2.find_item_indices(line,'^') for line in lines]
+        print(f"all_splitters: {all_splitters}") if Day7Part2.DEBUG else None
         start = lines[0].find('S')
         lines[1] = lines[1][:start] + '|' + lines[1][start+1:]
-        timeline_count = Day7Part2.iterate(lines, 2, 1, '') # Start count at 1, since there's 1 timeline to start
+        timeline_count = Day7Part2.iterate(lines, all_splitters, 2, 1, '') # Start count at 1, since there's 1 timeline to start
         return timeline_count
 
 if __name__ == "__main__":
