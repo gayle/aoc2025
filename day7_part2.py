@@ -27,7 +27,7 @@ class Day7Part2:
         now = time.time()
         if now - Day7Part2.last_progress_time > 2.0:
             rate = count / (now - Day7Part2.start_time)
-            print(f"{count:,}, {rate:,.0f} splits/sec", end="\r") # progress indicator
+            print(f"{count:,} - {rate:,.0f} / sec", end="\r") # progress indicator
             Day7Part2.last_progress_time = now
         
     # .......S.......
