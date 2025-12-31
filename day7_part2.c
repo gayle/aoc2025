@@ -105,7 +105,7 @@ void print_progress(long count) {
 }
 
 long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lines) {
-    // Recursive logic matching Python version
+    // In-place backtracking version (no array copies)
     print_progress(count);
     if (n == num_lines) {
         return count;
@@ -113,7 +113,6 @@ long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lin
     int prev_beam_idx = all_beams[n-1];
     int* splitters = all_splitters[n];
     int num_splitters = 0;
-    // Count splitters for this row
     while (num_splitters < MAX_LINE_LENGTH && splitters[num_splitters] != -1) num_splitters++;
 
     if (num_splitters > 0) {
@@ -123,34 +122,32 @@ long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lin
             if (splitter == prev_beam_idx) {
                 no_splitter = 0;
                 // propagate left (same timeline)
-                int left_beams[MAX_LINES];
-                memcpy(left_beams, all_beams, sizeof(int) * num_lines);
-                left_beams[n] = splitter - 1;
-                count = iterate(left_beams, all_splitters, n+1, count, num_lines);
+                int old_val = all_beams[n];
+                all_beams[n] = splitter - 1;
+                count = iterate(all_beams, all_splitters, n+1, count, num_lines);
                 // propagate right (new timeline, count + 1)
-                int right_beams[MAX_LINES];
-                memcpy(right_beams, all_beams, sizeof(int) * num_lines);
-                right_beams[n] = splitter + 1;
-                count = iterate(right_beams, all_splitters, n+1, count+1, num_lines);
+                all_beams[n] = splitter + 1;
+                count = iterate(all_beams, all_splitters, n+1, count+1, num_lines);
+                all_beams[n] = old_val; // backtrack
             }
         }
         if (no_splitter) {
             if (prev_beam_idx == -1) {
                 return count;
             }
-            int new_beams[MAX_LINES];
-            memcpy(new_beams, all_beams, sizeof(int) * num_lines);
-            new_beams[n] = prev_beam_idx;
-            count = iterate(new_beams, all_splitters, n+1, count, num_lines);
+            int old_val = all_beams[n];
+            all_beams[n] = prev_beam_idx;
+            count = iterate(all_beams, all_splitters, n+1, count, num_lines);
+            all_beams[n] = old_val; // backtrack
         }
     } else {
         if (prev_beam_idx == -1) {
             return count;
         }
-        int new_beams[MAX_LINES];
-        memcpy(new_beams, all_beams, sizeof(int) * num_lines);
-        new_beams[n] = prev_beam_idx;
-        count = iterate(new_beams, all_splitters, n+1, count, num_lines);
+        int old_val = all_beams[n];
+        all_beams[n] = prev_beam_idx;
+        count = iterate(all_beams, all_splitters, n+1, count, num_lines);
+        all_beams[n] = old_val; // backtrack
     }
     return count;
 }
