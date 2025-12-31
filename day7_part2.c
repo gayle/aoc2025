@@ -106,7 +106,9 @@ void print_progress(long count) {
 
 long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lines) {
     // In-place backtracking version (no array copies)
-    print_progress(count);
+    if (count % 1000000 == 0) {
+        print_progress(count);
+    }
     if (n == num_lines) {
         return count;
     }
