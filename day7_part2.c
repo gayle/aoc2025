@@ -17,7 +17,7 @@ int DEBUG = 0;
 double start_time = 0;
 double last_progress_time = 0;
 
-void format_with_commas(long n, char *out, size_t out_size);
+void format_with_commas(unsigned long long n, char* out, size_t out_size);
 void parse_input(const char* input_text, char lines[][MAX_LINE_LENGTH], int* num_lines);
 void find_item_indices(const char* line, char item, int* items, int* num_items);
 void print_progress(unsigned long long count);
@@ -25,12 +25,11 @@ long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lin
 unsigned long long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines);
 
 // Helper to format long with commas
-void format_with_commas(long n, char* out, size_t out_size) {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%ld", n);
+void format_with_commas(unsigned long long n, char* out, size_t out_size) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%llu", n);
     int len = strlen(buf);
-    int commas = (len - 1) / 3;
-    int out_idx = 0, buf_idx = 0;
+    int out_idx = 0;
     int first_group = len % 3;
     if (first_group == 0) first_group = 3;
     for (int i = 0; i < len; ++i) {
@@ -84,7 +83,7 @@ void find_item_indices(const char* line, char item, int* items, int* num_items) 
     *num_items = found;
 }
 
-void print_progress(long count) {
+void print_progress(unsigned long long count) {
     // Print progress every 2 seconds: count, elapsed time, and rate, with commas (portable)
     double now = (double)clock() / CLOCKS_PER_SEC;
     if (start_time == 0) {
@@ -94,10 +93,10 @@ void print_progress(long count) {
     double elapsed = now - start_time;
     if (now - last_progress_time > 2.0) {
         double rate = (elapsed > 0) ? (count / elapsed) : 0.0;
-        char count_str[32], elapsed_str[32], rate_str[32];
+        char count_str[64], elapsed_str[64], rate_str[64];
         format_with_commas(count, count_str, sizeof(count_str));
-        format_with_commas((long)elapsed, elapsed_str, sizeof(elapsed_str));
-        format_with_commas((long)rate, rate_str, sizeof(rate_str));
+        format_with_commas((unsigned long long)elapsed, elapsed_str, sizeof(elapsed_str));
+        format_with_commas((unsigned long long)rate, rate_str, sizeof(rate_str));
         printf("%s splits in %s secs: %s / sec\r", count_str, elapsed_str, rate_str);
         fflush(stdout);
         last_progress_time = now;
