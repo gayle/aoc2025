@@ -20,7 +20,7 @@ double last_progress_time = 0;
 void format_with_commas(long n, char *out, size_t out_size);
 void parse_input(const char* input_text, char lines[][MAX_LINE_LENGTH], int* num_lines);
 void find_item_indices(const char* line, char item, int* items, int* num_items);
-void print_progress(long count);
+void print_progress(unsigned long long count);
 long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lines);
 long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines);
 
@@ -154,7 +154,7 @@ long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lin
     return count;
 }
 
-long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines) {
+unsigned long long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines) {
     // Find all splitters for each line
     int* all_splitters[MAX_LINES];
     int num_splitters[MAX_LINES];
@@ -242,8 +242,8 @@ int main(int argc, char* argv[]) {
     printf("Read %d lines from %s\n", num_lines, argv[1]);
 
     // Call iterate_tachyon_beam and print the result
-    long result = iterate_tachyon_beam(lines, num_lines);
-    printf("\nDay 7 Part 2 result: %ld\n", result);
+    unsigned long long result = iterate_tachyon_beam(lines, num_lines);
+    printf("\nDay 7 Part 2 result: %llu\n", result);
 
     free(input_text);
     return 0;
