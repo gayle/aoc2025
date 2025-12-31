@@ -22,7 +22,7 @@ void parse_input(const char* input_text, char lines[][MAX_LINE_LENGTH], int* num
 void find_item_indices(const char* line, char item, int* items, int* num_items);
 void print_progress(unsigned long long count);
 long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lines);
-long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines);
+unsigned long long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines);
 
 // Helper to format long with commas
 void format_with_commas(long n, char* out, size_t out_size) {
@@ -185,24 +185,6 @@ unsigned long long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_l
     all_beams[0] = 0;
     all_beams[1] = start;
     for (int i = 2; i < num_lines; ++i) all_beams[i] = 0;
-
-    // Print all_beams
-    // printf("all_beams: [");
-    // for (int i = 0; i < num_lines; ++i) {
-    //     printf("%d", all_beams[i]);
-    //     if (i < num_lines - 1) printf(", ");
-    // }
-    // printf("]\n");
-
-    // Print all_splitters
-    // for (int i = 0; i < num_lines; ++i) {
-    //     printf("all_splitters[%d]: [", i);
-    //     for (int j = 0; j < num_splitters[i]; ++j) {
-    //         printf("%d", all_splitters[i][j]);
-    //         if (j + 1 < num_splitters[i]) printf(", ");
-    //     }
-    //     printf("]\n");
-    // }
 
     long result = iterate(all_beams, all_splitters, 2, 1, num_lines);
 
