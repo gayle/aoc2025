@@ -1,8 +1,7 @@
 // C conversion of day7_part2.py.
 
 // In Developer Powershell for VS 2019:
-// > cl day7_part2.c
-// > day7_part2.exe day7_input_dean.txt
+// cl day7_part2.c; .\day7_part2.exe day7_input_dean.txt
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,8 +87,59 @@ long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lin
 }
 
 long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines) {
-    // Stub: optimized entry point
-    return 0;
+    // Find all splitters for each line
+    int* all_splitters[MAX_LINES];
+    int num_splitters[MAX_LINES];
+    for (int i = 0; i < num_lines; ++i) {
+        all_splitters[i] = (int*)malloc(MAX_LINE_LENGTH * sizeof(int));
+        find_item_indices(lines[i], '^', all_splitters[i], &num_splitters[i]);
+        // Initialize unused elements to -1
+        for (int j = num_splitters[i]; j < MAX_LINE_LENGTH; ++j) {
+            all_splitters[i][j] = -1;
+        }
+    }
+
+    // Find the start index 'S' in the first line
+    int start = -1;
+    for (int i = 0; lines[0][i] != '\0'; ++i) {
+        if (lines[0][i] == 'S') {
+            start = i;
+            break;
+        }
+    }
+    if (start == -1) {
+        for (int i = 0; i < num_lines; ++i) free(all_splitters[i]);
+        return 0;
+    }
+
+    // Prepare all_beams array
+    int all_beams[MAX_LINES];
+    all_beams[0] = 0;
+    all_beams[1] = start;
+    for (int i = 2; i < num_lines; ++i) all_beams[i] = 0;
+
+    // Print all_beams
+    // printf("all_beams: [");
+    // for (int i = 0; i < num_lines; ++i) {
+    //     printf("%d", all_beams[i]);
+    //     if (i < num_lines - 1) printf(", ");
+    // }
+    // printf("]\n");
+
+    // Print all_splitters
+    // for (int i = 0; i < num_lines; ++i) {
+    //     printf("all_splitters[%d]: [", i);
+    //     for (int j = 0; j < num_splitters[i]; ++j) {
+    //         printf("%d", all_splitters[i][j]);
+    //         if (j + 1 < num_splitters[i]) printf(", ");
+    //     }
+    //     printf("]\n");
+    // }
+
+    long result = iterate(all_beams, all_splitters, 2, 1, num_lines);
+
+    for (int i = 0; i < num_lines; ++i) free(all_splitters[i]);
+    return result;
 }
 
 int main(int argc, char* argv[]) {
