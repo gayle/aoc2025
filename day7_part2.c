@@ -17,11 +17,30 @@ int DEBUG = 0;
 double start_time = 0;
 double last_progress_time = 0;
 
+void format_with_commas(long n, char *out, size_t out_size);
 void parse_input(const char* input_text, char lines[][MAX_LINE_LENGTH], int* num_lines);
 void find_item_indices(const char* line, char item, int* items, int* num_items);
 void print_progress(long count);
 long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lines);
 long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines);
+
+// Helper to format long with commas
+void format_with_commas(long n, char* out, size_t out_size) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%ld", n);
+    int len = strlen(buf);
+    int commas = (len - 1) / 3;
+    int out_idx = 0, buf_idx = 0;
+    int first_group = len % 3;
+    if (first_group == 0) first_group = 3;
+    for (int i = 0; i < len; ++i) {
+        if (i > 0 && (i - first_group) % 3 == 0) {
+            if (out_idx < out_size - 1) out[out_idx++] = ',';
+        }
+        if (out_idx < out_size - 1) out[out_idx++] = buf[i];
+    }
+    out[out_idx] = '\0';
+}
 
 void parse_input(const char* input_text, char lines[][MAX_LINE_LENGTH], int* num_lines) {
     // Split input_text into lines, store in lines array, set num_lines
@@ -66,7 +85,7 @@ void find_item_indices(const char* line, char item, int* items, int* num_items) 
 }
 
 void print_progress(long count) {
-    // Print progress every 2 seconds: count, elapsed time, and rate
+    // Print progress every 2 seconds: count, elapsed time, and rate, with commas (portable)
     double now = (double)clock() / CLOCKS_PER_SEC;
     if (start_time == 0) {
         start_time = now;
@@ -75,15 +94,65 @@ void print_progress(long count) {
     double elapsed = now - start_time;
     if (now - last_progress_time > 2.0) {
         double rate = (elapsed > 0) ? (count / elapsed) : 0.0;
-        printf("%ld splits in %.0f secs: %.0f / sec\r", count, elapsed, rate);
+        char count_str[32], elapsed_str[32], rate_str[32];
+        format_with_commas(count, count_str, sizeof(count_str));
+        format_with_commas((long)elapsed, elapsed_str, sizeof(elapsed_str));
+        format_with_commas((long)rate, rate_str, sizeof(rate_str));
+        printf("%s splits in %s secs: %s / sec\r", count_str, elapsed_str, rate_str);
         fflush(stdout);
         last_progress_time = now;
     }
 }
 
 long iterate(int* all_beams, int** all_splitters, int n, long count, int num_lines) {
-    // Stub: recursive logic
-    return 0;
+    // Recursive logic matching Python version
+    print_progress(count);
+    if (n == num_lines) {
+        return count;
+    }
+    int prev_beam_idx = all_beams[n-1];
+    int* splitters = all_splitters[n];
+    int num_splitters = 0;
+    // Count splitters for this row
+    while (num_splitters < MAX_LINE_LENGTH && splitters[num_splitters] != -1) num_splitters++;
+
+    if (num_splitters > 0) {
+        int no_splitter = 1;
+        for (int i = 0; i < num_splitters; ++i) {
+            int splitter = splitters[i];
+            if (splitter == prev_beam_idx) {
+                no_splitter = 0;
+                // propagate left (same timeline)
+                int left_beams[MAX_LINES];
+                memcpy(left_beams, all_beams, sizeof(int) * num_lines);
+                left_beams[n] = splitter - 1;
+                count = iterate(left_beams, all_splitters, n+1, count, num_lines);
+                // propagate right (new timeline, count + 1)
+                int right_beams[MAX_LINES];
+                memcpy(right_beams, all_beams, sizeof(int) * num_lines);
+                right_beams[n] = splitter + 1;
+                count = iterate(right_beams, all_splitters, n+1, count+1, num_lines);
+            }
+        }
+        if (no_splitter) {
+            if (prev_beam_idx == -1) {
+                return count;
+            }
+            int new_beams[MAX_LINES];
+            memcpy(new_beams, all_beams, sizeof(int) * num_lines);
+            new_beams[n] = prev_beam_idx;
+            count = iterate(new_beams, all_splitters, n+1, count, num_lines);
+        }
+    } else {
+        if (prev_beam_idx == -1) {
+            return count;
+        }
+        int new_beams[MAX_LINES];
+        memcpy(new_beams, all_beams, sizeof(int) * num_lines);
+        new_beams[n] = prev_beam_idx;
+        count = iterate(new_beams, all_splitters, n+1, count, num_lines);
+    }
+    return count;
 }
 
 long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines) {
