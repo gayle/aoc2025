@@ -93,10 +93,40 @@ long iterate_tachyon_beam(char lines[][MAX_LINE_LENGTH], int num_lines) {
 }
 
 int main(int argc, char* argv[]) {
-    // Print out the contents of argv
-    printf("argc = %d\n", argc);
-    for (int i = 0; i < argc; ++i) {
-        printf("argv[%d] = %s\n", i, argv[i]);
+    if (argc < 2) {
+        printf("Usage: %s <input_filename>\n", argv[0]);
+        return 1;
     }
+
+    // Read the contents of the input file
+    FILE* f = fopen(argv[1], "rb");
+    if (!f) {
+        printf("Could not open file: %s\n", argv[1]);
+        return 1;
+    }
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char* input_text = (char*)malloc(fsize + 1);
+    if (!input_text) {
+        printf("Memory allocation failed.\n");
+        fclose(f);
+        return 1;
+    }
+    fread(input_text, 1, fsize, f);
+    input_text[fsize] = '\0';
+    fclose(f);
+
+    // Parse input into lines
+    char lines[MAX_LINES][MAX_LINE_LENGTH];
+    int num_lines = 0;
+    parse_input(input_text, lines, &num_lines);
+    printf("Read %d lines from %s\n", num_lines, argv[1]);
+
+    // Call iterate_tachyon_beam and print the result
+    long result = iterate_tachyon_beam(lines, num_lines);
+    printf("\nDay 7 Part 2 result: %ld\n", result);
+
+    free(input_text);
     return 0;
 }
