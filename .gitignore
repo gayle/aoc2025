@@ -1,3 +1,16 @@
+# C/C++ build artifacts
+*.exe
+*.obj
+*.o
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.out
+day7_part2_stub
+build/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
