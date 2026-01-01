@@ -1,3 +1,12 @@
+# Visual Studio files
+slnx.sqlite
+*.db
+*.opendb
+*.wsuo
+*.vsidx
+VSWorkspaceState.json
+DocumentLayout.json
+
 # C/C++ build artifacts
 *.exe
 *.obj
