@@ -6,6 +6,64 @@ class Day7Part2:
     last_progress_time = start_time
 
     @staticmethod
+    def iterate_with_caching(all_beams, all_splitters, n, count, indent, cache):
+        Day7Part2.print_progress(count)
+        if Day7Part2.DEBUG:
+            print("\n")
+            print(f"{indent}n: {n}, count: {count}, len(all_beams): {len(all_beams)}")
+        if n == len(all_beams):
+            if Day7Part2.DEBUG:
+                print(f"{indent}Hit end of input")
+            return count
+
+        prev_beam_idx = all_beams[n-1]
+        splitters = all_splitters[n]
+
+        if prev_beam_idx == -1 and Day7Part2.DEBUG:
+            print(f"Error: Beams should be 1. Was 0.")
+
+        if splitters:
+            no_splitter = True
+            for splitter in splitters:
+                if splitter == prev_beam_idx:
+                    no_splitter = False
+                    cache_key = (n, splitter)
+                    if cache_key in cache:
+                        if Day7Part2.DEBUG:
+                            print(f"{indent}Cache hit for {cache_key}: {cache[cache_key]}")
+                        return count + cache[cache_key]
+
+                    # propagate left (same timeline)
+                    left_beams = all_beams.copy()
+                    left_beams[n] = splitter - 1
+                    left_count = Day7Part2.iterate_with_caching(left_beams, all_splitters, n+1, count, indent+'  ', cache)
+
+                    # propagate right (new timeline, count + 1)
+                    right_beams = all_beams.copy()
+                    right_beams[n] = splitter + 1
+                    right_count = Day7Part2.iterate_with_caching(right_beams, all_splitters, n+1, left_count+1, indent+'  ', cache)
+
+                    # The difference between right_count and count is the number of timelines from this splitter
+                    cache[cache_key] = right_count - count
+                    if Day7Part2.DEBUG:
+                        print(f"{indent}Cache store for {cache_key}: {cache[cache_key]}")
+                    count = right_count
+            if no_splitter:
+                if prev_beam_idx == -1:
+                    return count
+                new_beams = all_beams.copy()
+                new_beams[n] = prev_beam_idx
+                count = Day7Part2.iterate_with_caching(new_beams, all_splitters, n+1, count, indent, cache)
+        else:
+            if prev_beam_idx == -1:
+                return count
+            new_beams = all_beams.copy()
+            new_beams[n] = prev_beam_idx
+            count = Day7Part2.iterate_with_caching(new_beams, all_splitters, n+1, count, indent, cache)
+
+        return count
+
+    @staticmethod
     def parse_input(input_text):
         return input_text.splitlines()
 
@@ -30,55 +88,55 @@ class Day7Part2:
             print(f"{count:,} - {rate:,.0f} / sec", end="\r")
             Day7Part2.last_progress_time = now
 
-    @staticmethod
-    def iterate(all_beams, all_splitters, n, count, indent):
-        Day7Part2.print_progress(count)
-        if Day7Part2.DEBUG:
-            print("\n")
-            print(f"{indent}n: {n}, count: {count}, len(all_beams): {len(all_beams)}")
-        if n == len(all_beams):
-            if Day7Part2.DEBUG:
-                print(f"{indent}Hit end of input")
-            return count
+    # @staticmethod
+    # def iterate(all_beams, all_splitters, n, count, indent):
+    #     Day7Part2.print_progress(count)
+    #     if Day7Part2.DEBUG:
+    #         print("\n")
+    #         print(f"{indent}n: {n}, count: {count}, len(all_beams): {len(all_beams)}")
+    #     if n == len(all_beams):
+    #         if Day7Part2.DEBUG:
+    #             print(f"{indent}Hit end of input")
+    #         return count
 
-        # find the single incoming beam index on the previous row (or -1 if none)
-        prev_beam_idx = all_beams[n-1]
-        splitters = all_splitters[n]
+    #     # find the single incoming beam index on the previous row (or -1 if none)
+    #     prev_beam_idx = all_beams[n-1]
+    #     splitters = all_splitters[n]
 
-        if prev_beam_idx == -1 and Day7Part2.DEBUG:
-            print(f"Error: Beams should be 1. Was 0.")
+    #     if prev_beam_idx == -1 and Day7Part2.DEBUG:
+    #         print(f"Error: Beams should be 1. Was 0.")
 
-        if splitters:
-            no_splitter = True
-            for splitter in splitters:
-                if splitter == prev_beam_idx:
-                    no_splitter = False
+    #     if splitters:
+    #         no_splitter = True
+    #         for splitter in splitters:
+    #             if splitter == prev_beam_idx:
+    #                 no_splitter = False
 
-                    # propagate left (same timeline)
-                    left_beams = all_beams.copy()
-                    left_beams[n] = splitter - 1
-                    count = Day7Part2.iterate(left_beams, all_splitters, n+1, count, indent+'  ')
+    #                 # propagate left (same timeline)
+    #                 left_beams = all_beams.copy()
+    #                 left_beams[n] = splitter - 1
+    #                 count = Day7Part2.iterate(left_beams, all_splitters, n+1, count, indent+'  ')
 
-                    # propagate right (new timeline, count + 1)
-                    right_beams = all_beams.copy()
-                    right_beams[n] = splitter + 1
-                    count = Day7Part2.iterate(right_beams, all_splitters, n+1, count+1, indent+'  ')
-            if no_splitter:
-                # no matching splitter, propagate straight down
-                if prev_beam_idx == -1:
-                    return count
-                new_beams = all_beams.copy()
-                new_beams[n] = prev_beam_idx
-                count = Day7Part2.iterate(new_beams, all_splitters, n+1, count, indent)
-        else:
-            # no splitters on this row, propagate down
-            if prev_beam_idx == -1:
-                return count
-            new_beams = all_beams.copy()
-            new_beams[n] = prev_beam_idx
-            count = Day7Part2.iterate(new_beams, all_splitters, n+1, count, indent)
+    #                 # propagate right (new timeline, count + 1)
+    #                 right_beams = all_beams.copy()
+    #                 right_beams[n] = splitter + 1
+    #                 count = Day7Part2.iterate(right_beams, all_splitters, n+1, count+1, indent+'  ')
+    #         if no_splitter:
+    #             # no matching splitter, propagate straight down
+    #             if prev_beam_idx == -1:
+    #                 return count
+    #             new_beams = all_beams.copy()
+    #             new_beams[n] = prev_beam_idx
+    #             count = Day7Part2.iterate(new_beams, all_splitters, n+1, count, indent)
+    #     else:
+    #         # no splitters on this row, propagate down
+    #         if prev_beam_idx == -1:
+    #             return count
+    #         new_beams = all_beams.copy()
+    #         new_beams[n] = prev_beam_idx
+    #         count = Day7Part2.iterate(new_beams, all_splitters, n+1, count, indent)
 
-        return count
+    #     return count
 
     @staticmethod
     def iterate_tachyon_beam(lines):
@@ -103,7 +161,7 @@ class Day7Part2:
         for i in range(2, len(lines)):
             all_beams.append(0)
         print(f"len(lines): {len(lines)}, len(all_beams): {len(all_beams)}") if Day7Part2.DEBUG else None
-        return Day7Part2.iterate(all_beams, all_splitters, 2, 1, '')
+        return Day7Part2.iterate_with_caching(all_beams, all_splitters, 2, 1, '', {})
 
 
 if __name__ == "__main__":
