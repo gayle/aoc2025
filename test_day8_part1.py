@@ -65,19 +65,19 @@ def test_parse_input():
     assert junctions[18] == (984,92,344)
     assert junctions[19] == (425,690,689)
 
-def test_closest_points():
+def test_closest_junctions():
     junctions = parse_input(input_text)
-    points = closest_points(junctions, 10)
-    assert len(points) == 10
+    closest = closest_junctions(junctions, 10)
+    assert len(closest) == 10
     # The two junction boxes which are closest together are 162,817,812 and 425,690,689
-    assert points[0] == ((162,817,812), (425,690,689))
+    assert closest[0] == ((162,817,812), (425,690,689))
     # Now, the two junction boxes which are closest together but aren't already directly connected are 162,817,812 and 431,825,988.
-    assert points[1] == ((162,817,812), (431,825,988))
+    assert closest[1] == ((162,817,812), (431,825,988))
     # The next two junction boxes to connect are 906,360,560 and 805,96,715.
-    assert points[2] == ((906,360,560), (805,96,715))
+    assert closest[2] == ((906,360,560), (805,96,715))
     # The next two junction boxes are 431,825,988 and 425,690,689.
-    assert points[3] == ((431,825,988), (425,690,689))
-    # The of the assertions are based on the debug output:
+    assert closest[3] == ((431,825,988), (425,690,689))
+    # The rest of the assertions are based on the debug output:
     # sorted_points:
     # (333.6555109690233, ((862, 61, 35), (984, 92, 344)))
     # (338.33858780813046, ((52, 470, 668), (117, 168, 530)))
@@ -85,14 +85,19 @@ def test_closest_points():
     # (347.59890678769403, ((906, 360, 560), (739, 650, 466)))
     # (350.786259708102, ((346, 949, 466), (425, 690, 689)))
     # (352.936254867646, ((906, 360, 560), (984, 92, 344)))
-    assert points[4] == ((862, 61, 35), (984, 92, 344))
-    assert points[5] == ((52, 470, 668), (117, 168, 530))
-    assert points[6] == ((819, 987, 18), (941, 993, 340))
-    assert points[7] == ((906, 360, 560), (739, 650, 466))
-    assert points[8] == ((346, 949, 466), (425, 690, 689))
-    assert points[9] == ((906, 360, 560), (984, 92, 344))
+    assert closest[4] == ((862, 61, 35), (984, 92, 344))
+    assert closest[5] == ((52, 470, 668), (117, 168, 530))
+    assert closest[6] == ((819, 987, 18), (941, 993, 340))
+    assert closest[7] == ((906, 360, 560), (739, 650, 466))
+    assert closest[8] == ((346, 949, 466), (425, 690, 689))
+    assert closest[9] == ((906, 360, 560), (984, 92, 344))
     
-def test_total_result():
+def test_connect_circuits():
     junctions = parse_input(input_text)
-    assert calculate_result(junctions) == 40
-    
+    closest = closest_junctions(junctions, 10)
+    assert len(closest) == 10
+    circuit_sizes = connect_circuits(closest, junctions)
+
+    # After making the ten shortest connections, there are 11 circuits: one circuit which contains 5 junction boxes, one circuit which contains 4 junction boxes, two circuits which contain 2 junction boxes each, and seven circuits which each contain a single junction box. Multiplying together the sizes of the three largest circuits (5, 4, and one of the circuits of size 2) produces 40.   
+    assert circuit_sizes == [5,4,2,2,1,1,1,1,1,1,1]    
+        
