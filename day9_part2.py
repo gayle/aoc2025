@@ -1,4 +1,5 @@
 import sys, os, time
+import numpy
 
 DEBUG = True
 count = 0
@@ -71,23 +72,45 @@ def find_result(coords):
     print(f"\nFinding largest rectangle...") if DEBUG else None
     start = time.time()
     max_area = 0
-    for x1, y1 in coords:
-        for x2, y2 in coords:
-            if x1 < x2 and y1 < y2:
-                valid_rectangle = True
-                for x in range(x1, x2 + 1):
-                    for y in range(y1, y2 + 1):
-                        print_progress() if DEBUG else None
-                        if (x, y) not in coords and (x, y) not in green_tiles:
-                            valid_rectangle = False
-                            break
-                    if not valid_rectangle:
-                        break
-                if valid_rectangle:
-                    area = (x2 - x1 + 1) * (y2 - y1 + 1)
-                    if area > max_area:
-                        print(f"\nNew max area {area} found between ({x1},{y1}) and ({x2},{y2})") if DEBUG else None
-                        max_area = area
+    # Use numpy for grid operations
+    print(f"\nBuilding numpy grid...") if DEBUG else None
+    min_x = min(x for x, y in coords)
+    max_x = max(x for x, y in coords)
+    min_y = min(y for x, y in coords)
+    max_y = max(y for x, y in coords)
+    width = max_x - min_x + 1
+    height = max_y - min_y + 1
+    grid = numpy.zeros((width, height), dtype=bool)
+    for x, y in green_tiles:
+        grid[x - min_x, y - min_y] = True
+    for x, y in coords:
+        grid[x - min_x, y - min_y] = True
+
+    print(f"\nFinding largest rectangle with numpy...") if DEBUG else None
+    max_area = 0
+    # Dynamic programming: maximal rectangle in binary matrix
+    hist = numpy.zeros((width, height), dtype=int)
+    for x in range(width):
+        for y in range(height):
+            if grid[x, y]:
+                hist[x, y] = hist[x, y-1] + 1 if y > 0 else 1
+            else:
+                hist[x, y] = 0
+    for y in range(height):
+        stack = []
+        x = 0
+        while x <= width:
+            h = hist[x, y] if x < width else 0
+            if not stack or h >= hist[stack[-1], y]:
+                stack.append(x)
+                x += 1
+            else:
+                top = stack.pop()
+                w = x if not stack else x - stack[-1] - 1
+                area = hist[top, y] * w
+                if area > max_area:
+                    print(f"\nNew max area {area} found at row {y}, col {top}, width {w}, height {hist[top, y]}") if DEBUG else None
+                    max_area = area
     print(f"\nFound largest rectangle in {time.time() - start:,.0f} seconds") if DEBUG else None
 
     return max_area
