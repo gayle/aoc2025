@@ -55,27 +55,28 @@ def find_result(coords):
     max_x = max(x for x, y in coords)
     min_y = min(y for x, y in coords)
     max_y = max(y for x, y in coords)
+    # Precompute vertical segments for each scanline
+    scanline_xs = {y: [] for y in range(min_y + 1, max_y)}
+    for i in range(len(coords)):
+        x1, y1 = coords[i]
+        x2, y2 = coords[(i + 1) % len(coords)]
+        # Ignore horizontal edges
+        if y1 == y2:
+            continue
+        # For each scanline y between y1 and y2 (exclusive), compute intersection
+        y_start, y_end = sorted([y1, y2])
+        for y in range(max(min_y + 1, y_start + 1), min(max_y, y_end + 1)):
+            dy = y2 - y1
+            dx = x2 - x1
+            x_cross = x1 + ((y - y1) * dx) // dy
+            scanline_xs[y].append(x_cross)
+
     total_scanlines = max_y - min_y - 1
     for idx, y in enumerate(range(min_y + 1, max_y)):
         if DEBUG and total_scanlines > 0 and idx % max(1, total_scanlines // 100) == 0:
             percent = (idx + 1) * 100 // total_scanlines
             print(f"Scanline fill progress: {percent}% complete", end="\r")
-        x_crossings = []
-        for i in range(len(coords)):
-            x1, y1 = coords[i]
-            x2, y2 = coords[(i + 1) % len(coords)]
-            # Ignore horizontal edges
-            if y1 == y2:
-                continue
-            # Check if this edge crosses the scanline y
-            if (y1 > y) != (y2 > y):
-                # Compute intersection x coordinate using integer math
-                # Since all edges are axis-aligned, x1==x2 or y1==y2
-                if y2 != y1:
-                    dy = y2 - y1
-                    dx = x2 - x1
-                    x_cross = x1 + ((y - y1) * dx) // dy
-                    x_crossings.append(x_cross)
+        x_crossings = scanline_xs[y]
         x_crossings.sort()
         for i in range(0, len(x_crossings), 2):
             if i+1 >= len(x_crossings):
