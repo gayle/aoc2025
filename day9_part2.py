@@ -55,6 +55,8 @@ def find_result(coords):
     max_x = max(x for x, y in coords)
     min_y = min(y for x, y in coords)
     max_y = max(y for x, y in coords)
+    # Build set of border tiles once
+    border_tiles = set(coords)
     # Precompute vertical segments for each scanline
     scanline_xs = {y: [] for y in range(min_y + 1, max_y)}
     for i in range(len(coords)):
@@ -85,7 +87,7 @@ def find_result(coords):
             x_start = x_crossings[i] + 1
             x_end = x_crossings[i+1]
             for x in range(x_start, x_end):
-                if (x, y) not in coords:
+                if (x, y) not in border_tiles:
                     green_tiles.add((x, y))
     if DEBUG:
         print("Scanline fill progress: 100% complete")
