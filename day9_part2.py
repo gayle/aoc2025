@@ -57,7 +57,7 @@ def find_result(coords):
     max_y = max(y for x, y in coords)
     # Build set of border tiles once
     border_tiles = set(coords)
-    # Precompute vertical segments for each scanline
+    # Use edge intersection logic for scanline fill
     scanline_xs = {y: [] for y in range(min_y + 1, max_y)}
     for i in range(len(coords)):
         x1, y1 = coords[i]
@@ -83,7 +83,6 @@ def find_result(coords):
         for i in range(0, len(x_crossings), 2):
             if i+1 >= len(x_crossings):
                 break
-            # Only fill strictly inside, not including border
             x_start = x_crossings[i] + 1
             x_end = x_crossings[i+1]
             for x in range(x_start, x_end):
