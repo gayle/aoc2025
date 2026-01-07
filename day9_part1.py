@@ -12,7 +12,14 @@ def parse_input(input_text):
         print(f"Error parsing line: {line}")
 
 def find_result(coords):
-    return 0
+    max_area = 0
+    for x1, y1 in coords:
+        for x2, y2 in coords:
+            if x1 != x2 and y1 != y2:
+                area = (abs(x2 - x1) + 1) * (abs(y2 - y1) + 1)
+                if area > max_area:
+                    max_area = area
+    return max_area
 
 if __name__ == "__main__":
     # If no filename is provided, try common input filenames before failing.
