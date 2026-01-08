@@ -69,6 +69,15 @@ def check_rectangle_batch(args):
     last_update_time = time.time()
     process_name = current_process().name
     
+    # Initial progress update - show worker immediately
+    progress_dict[batch_id] = {
+        'processed': 0,
+        'total': total_pairs,
+        'max_area': 0,
+        'name': process_name,
+        'activity': 'Starting...'
+    }
+    
     for i, j in pairs:
         # Check if we should stop
         if stop_flag.value == 1:
@@ -77,7 +86,8 @@ def check_rectangle_batch(args):
                 'total': total_pairs,
                 'max_area': max_area,
                 'name': process_name,
-                'stopped': True
+                'stopped': True,
+                'activity': 'Stopped by user'
             }
             return max_area, max_rect
         
@@ -90,7 +100,8 @@ def check_rectangle_batch(args):
                 'processed': processed,
                 'total': total_pairs,
                 'max_area': max_area,
-                'name': process_name
+                'name': process_name,
+                'activity': 'Checking pairs'
             }
             last_update_time = current_time
         x1, y1 = coords[i]
@@ -109,6 +120,15 @@ def check_rectangle_batch(args):
         if area <= max_area:
             continue
         
+        # Update: checking corners
+        progress_dict[batch_id] = {
+            'processed': processed,
+            'total': total_pairs,
+            'max_area': max_area,
+            'name': process_name,
+            'activity': f'Checking corners: {area:,} area'
+        }
+        
         # Check the other two corners first (fast rejection)
         if (min_rx, max_ry) not in coord_set and not is_green_tile(min_rx, max_ry, coords):
             continue
@@ -116,12 +136,45 @@ def check_rectangle_batch(args):
             continue
         
         # Check all points in rectangle
+        total_points = (max_rx - min_rx + 1) * (max_ry - min_ry + 1)
+        points_checked = 0
         valid = True
+        
         for x in range(min_rx, max_rx + 1):
+            # Check stop flag at the start of each row
+            if stop_flag.value == 1:
+                progress_dict[batch_id] = {
+                    'processed': processed,
+                    'total': total_pairs,
+                    'max_area': max_area,
+                    'name': process_name,
+                    'stopped': True,
+                    'activity': 'Stopped by user'
+                }
+                return max_area, max_rect
+            
             for y in range(min_ry, max_ry + 1):
                 # Skip the corners we're using
                 if (x, y) == (x1, y1) or (x, y) == (x2, y2):
                     continue
+                
+                points_checked += 1
+                
+                # Update progress for large rectangles (every 100 points or every 0.5s)
+                if total_points > 1000:
+                    current_time = time.time()
+                    if points_checked % 100 == 0 or current_time - last_update_time >= 0.5:
+                        rect_progress = (points_checked / total_points) * 100
+                        progress_dict[batch_id] = {
+                            'processed': processed,
+                            'total': total_pairs,
+                            'max_area': max_area,
+                            'name': process_name,
+                            'checking_rect': f"{area:,} area, {rect_progress:.0f}% checked",
+                            'activity': f'Validating: {area:,} area'
+                        }
+                        last_update_time = current_time
+                
                 if (x, y) not in coord_set and not is_green_tile(x, y, coords):
                     valid = False
                     break
@@ -139,16 +192,19 @@ def check_rectangle_batch(args):
         'total': total_pairs,
         'max_area': max_area,
         'name': process_name,
-        'done': True
+        'done': True,
+        'activity': 'Completed'
     }
     return max_area, max_rect
 
-def generate_progress_table(progress_dict, max_area):
+def generate_progress_table(progress_dict, max_area, title_info=""):
     """Generate a rich table showing progress of all workers."""
-    table = Table(title="Rectangle Search Progress", show_header=True, header_style="bold magenta")
+    table_title = f"Rectangle Search Progress\n{title_info}" if title_info else "Rectangle Search Progress"
+    table = Table(title=table_title, show_header=True, header_style="bold magenta")
     table.add_column("Worker", style="cyan", width=20)
+    table.add_column("Activity", style="white", width=25)
     table.add_column("Progress", justify="right", style="green")
-    table.add_column("Status", justify="right")
+    table.add_column("Status", justify="right", width=30)
     table.add_column("Max Area", justify="right", style="yellow")
     
     for batch_id in sorted(progress_dict.keys()):
@@ -158,13 +214,22 @@ def generate_progress_table(progress_dict, max_area):
         total = info.get('total', 1)
         max_area_worker = info.get('max_area', 0)
         done = info.get('done', False)
+        checking_rect = info.get('checking_rect', '')
+        activity = info.get('activity', 'Idle')
         
         percent = (processed / total) * 100 if total > 0 else 0
         progress_bar = '█' * int(percent // 5) + '░' * (20 - int(percent // 5))
-        status = "✓ Done" if done else f"{processed}/{total}"
+        
+        if done:
+            status = "✓ Done"
+        elif checking_rect:
+            status = f"{processed}/{total} [{checking_rect}]"
+        else:
+            status = f"{processed}/{total}"
         
         table.add_row(
             name,
+            activity,
             f"{progress_bar} {percent:.1f}%",
             status,
             str(max_area_worker)
@@ -172,6 +237,7 @@ def generate_progress_table(progress_dict, max_area):
     
     table.add_row(
         "[bold]Overall Best[/bold]",
+        "",
         "",
         "",
         f"[bold]{max_area}[/bold]",
@@ -185,7 +251,12 @@ def find_largest_rectangle(coords, num_processes=None):
         num_processes = cpu_count()
     
     console = Console()
+    import os
+    main_pid = os.getpid()
     console.print(f"[bold green]Using {num_processes} processes[/bold green]")
+    console.print(f"[bold cyan]Main Process PID: {main_pid}[/bold cyan]")
+    console.print(f"[bold cyan]To kill (mingw64): kill -9 {main_pid}[/bold cyan]")
+    console.print(f"[bold cyan]Or (Windows): taskkill /F /PID {main_pid}[/bold cyan]")
     console.print(f"[bold yellow]Press Ctrl-C or ESC to stop[/bold yellow]\n")
     
     # Create a set of coord tuples for O(1) lookup
@@ -197,7 +268,7 @@ def find_largest_rectangle(coords, num_processes=None):
     console.print(f"[bold]Total rectangle pairs to check: {total:,}[/bold]")
     
     # Split pairs into batches for each process
-    batch_size = max(1, total // (num_processes * 4))  # 4x batches for better load balancing
+    batch_size = max(1, total // num_processes)  # 1 batch per process
     
     # Create a manager for shared progress tracking and stop flag
     manager = Manager()
@@ -226,15 +297,38 @@ def find_largest_rectangle(coords, num_processes=None):
     
     console.print(f"[bold]Split into {len(batches)} batches[/bold]\n")
     
+    # Create title info for table
+    title_info = f"PID: {main_pid} | kill -9 {main_pid} (mingw64) | taskkill /F /PID {main_pid} (Windows) | Ctrl-C/ESC to stop"
+    
     # Process batches in parallel
     max_area = 0
     max_rect = None
     completed = 0
     
     pool = Pool(processes=num_processes)
+    
+    # Start the work by creating the iterator (this starts workers processing)
+    result_iterator = pool.imap_unordered(check_rectangle_batch, batches)
+    
+    # Give workers a moment to start and update their status
+    time.sleep(0.5)
+    
     try:
-        with Live(generate_progress_table(progress_dict, max_area), refresh_per_second=4, console=console) as live:
-            for result in pool.imap_unordered(check_rectangle_batch, batches):
+        with Live(console=console, refresh_per_second=4, screen=False) as live:
+            # Start background thread to continuously update display
+            display_running = threading.Event()
+            display_running.set()
+            
+            def update_display_loop():
+                while display_running.is_set():
+                    live.update(generate_progress_table(progress_dict, max_area, title_info))
+                    time.sleep(0.25)
+            
+            display_thread = threading.Thread(target=update_display_loop, daemon=True)
+            display_thread.start()
+            
+            # Process results as they come in
+            for result in result_iterator:
                 if stop_flag.value == 1:
                     break
                 area, rect = result
@@ -242,9 +336,10 @@ def find_largest_rectangle(coords, num_processes=None):
                     max_area = area
                     max_rect = rect
                 completed += 1
-                
-                # Update the live display
-                live.update(generate_progress_table(progress_dict, max_area))
+            
+            # Stop display thread
+            display_running.clear()
+            display_thread.join(timeout=1)
     except KeyboardInterrupt:
         console.print("\n[bold red]Ctrl-C detected. Stopping all worker processes...[/bold red]")
         stop_flag.value = 1
