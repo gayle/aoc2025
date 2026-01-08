@@ -1,0 +1,43 @@
+commit 880f1d99a72a7a24426400f8ba5af45b7e50ee8f (HEAD -> main)
+Author: Gayle <gayle_999@yahoo.com>
+Date:   Mon Dec 29 22:10:12 2025 +0000
+
+    rename 'n' variable
+
+
+BEFORE Execution time: 0.06524157524108887 seconds
+COPILOT Execution time: 0.00019884109497070312 seconds
+
+
+day7_part2_GayleCopilotVersion2.py
+I tried something completely different.  I was saying yesterday that using copilot felt like cheating.  And Becca made the comment that using copilot is a skill to hone.  So based on that article I sent - instead of coming up with an algorithm I wanted to use and asking copilot how to write that, I described the problem and decided to see what it came up with.  So I'm running that now too.  
+Getting a pretty consistent 553,000 / second so far 
+
+python day7_part2_GayleCopilotVersion.py
+Friday 2:40pm - It's been running maybe 15 min 
+Current progress
+643,688,531 - 539,096 / sec    (2:50pm)
+1,827,878,389 - 513,717 / sec (3:29pm)
+2,634,193,015 - 476,667 / sec (4:02pm)
+4,613,461,457 - 422,243 / sec
+5,303,284,254 - 406,854 / sec (6:08pm) 
+5,771,840,028 - 401,855 / sec (6:30pm) 
+146,700,351,084 - 600,514 / sec (Mon 10:22am)
+
+        
+Friday 4:54pm Just started ruby.  
+13,154,294 - 193439/sec (Not a great throughput) 
+Monday 10:15am: 
+53,041,817,517 - 225233/sec
+
+ 
+ I installed ruby 4.0.0 and Copilot told me
+"ZJIT: You can try the new "Method-based" Just-In-Time compiler by running your scripts with ruby --zjit. It's designed to be more memory-efficient than the older YJIT.
+which stands for the "Zero-overhead JIT""
+It seems to use "rustc"
+
+Friday 6:07pm 
+ ruby --zjit day7_part2.rb
+Monday 10:19am
+49,080,471,736 - 212314/sec
+
