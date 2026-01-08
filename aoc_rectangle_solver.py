@@ -202,9 +202,9 @@ def generate_progress_table(progress_dict, max_area, title_info=""):
     table_title = f"Rectangle Search Progress\n{title_info}" if title_info else "Rectangle Search Progress"
     table = Table(title=table_title, show_header=True, header_style="bold magenta")
     table.add_column("Worker", style="cyan", width=20)
-    table.add_column("Activity", style="white", width=25)
+    table.add_column("Activity", style="white", width=50)
     table.add_column("Progress", justify="right", style="green")
-    table.add_column("Status", justify="right", width=30)
+    table.add_column("Status", justify="right", width=55)
     table.add_column("Max Area", justify="right", style="yellow")
     
     for batch_id in sorted(progress_dict.keys()):
