@@ -59,7 +59,8 @@ def is_green_tile(x, y, coords, cache=None):
 
 def check_rectangle_batch(args):
     """Check a batch of rectangle pairs."""
-    pairs, coords, coord_set, progress_dict, batch_id, stop_flag = args
+    pairs, coords, coord_set, bbox, progress_dict, batch_id, stop_flag = args
+    min_x, max_x, min_y, max_y = bbox
     max_area = 0
     max_rect = None
     
@@ -113,6 +114,10 @@ def check_rectangle_batch(args):
         
         min_rx, max_rx = min(x1, x2), max(x1, x2)
         min_ry, max_ry = min(y1, y2), max(y1, y2)
+        
+        # Skip if rectangle extends outside polygon bounding box
+        if min_rx < min_x or max_rx > max_x or min_ry < min_y or max_ry > max_y:
+            continue
         
         area = (max_rx - min_rx + 1) * (max_ry - min_ry + 1)
         
@@ -265,11 +270,29 @@ def find_largest_rectangle(coords, num_processes=None):
     console.print(f"[bold cyan]Or (Windows): taskkill /F /PID {main_pid}[/bold cyan]")
     console.print(f"[bold yellow]Press Ctrl-C or ESC to stop[/bold yellow]\n")
     
+    # Pre-compute polygon bounding box for early rejection
+    min_x = min(x for x, y in coords)
+    max_x = max(x for x, y in coords)
+    min_y = min(y for x, y in coords)
+    max_y = max(y for x, y in coords)
+    bbox = (min_x, max_x, min_y, max_y)
+    console.print(f"[bold]Polygon bounds: x=[{min_x}, {max_x}], y=[{min_y}, {max_y}][/bold]")
+    
     # Create a set of coord tuples for O(1) lookup
     coord_set = set(coords)
     
     # Generate all pairs
     pairs = [(i, j) for i in range(len(coords)) for j in range(i + 1, len(coords))]
+    
+    # Sort pairs by potential area (descending) - check largest rectangles first
+    console.print(f"[bold yellow]Sorting {len(pairs):,} pairs by potential area...[/bold yellow]")
+    def pair_area(pair):
+        i, j = pair
+        x1, y1 = coords[i]
+        x2, y2 = coords[j]
+        return abs(x2 - x1 + 1) * abs(y2 - y1 + 1)
+    
+    pairs.sort(key=pair_area, reverse=True)
     total = len(pairs)
     console.print(f"[bold]Total rectangle pairs to check: {total:,}[/bold]")
     
@@ -299,7 +322,7 @@ def find_largest_rectangle(coords, num_processes=None):
     batches = []
     for batch_id, i in enumerate(range(0, len(pairs), batch_size)):
         batch = pairs[i:i + batch_size]
-        batches.append((batch, coords, coord_set, progress_dict, batch_id, stop_flag))
+        batches.append((batch, coords, coord_set, bbox, progress_dict, batch_id, stop_flag))
     
     console.print(f"[bold]Split into {len(batches)} batches[/bold]\n")
     
