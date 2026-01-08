@@ -86,5 +86,5 @@ input_text = dedent('''\
 
 def test_find_result():
     coords = parse_input(input_text)
-    result = find_result(coords)
+    result = find_largest_rectangle(coords)
     assert result == 24
