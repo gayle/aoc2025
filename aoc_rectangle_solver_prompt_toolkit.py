@@ -4,10 +4,12 @@ import time
 import threading
 import signal
 import sys
-from rich.console import Console
-from rich.live import Live
-from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from prompt_toolkit import Application
+from prompt_toolkit.layout import Layout, HSplit, VSplit, Window
+from prompt_toolkit.widgets import Frame, Box
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.formatted_text import HTML
 
 def parse_input(input_text):
     coords = []
@@ -197,25 +199,39 @@ def check_rectangle_batch(args):
     }
     return max_area, max_rect
 
-def generate_progress_table(progress_dict, max_area, title_info=""):
-    """Generate a rich table showing progress of all workers."""
-    table_title = f"Rectangle Search Progress\n{title_info}" if title_info else "Rectangle Search Progress"
-    table = Table(title=table_title, show_header=True, header_style="bold magenta")
-    table.add_column("Worker", style="cyan", width=20)
-    table.add_column("Activity", style="white", width=50)
-    table.add_column("Progress", justify="right", style="green")
-    table.add_column("Status", justify="right", width=55)
-    table.add_column("Max Area", justify="right", style="yellow")
+def generate_progress_display(progress_dict, max_area, title_info="", elapsed_time=0):
+    """Generate formatted text display of progress."""
+    from prompt_toolkit.formatted_text import FormattedText
     
+    lines = []
+    
+    # Header
+    lines.append(('bold underline', 'Rectangle Search Progress'))
+    lines.append(('', '\n'))
+    if title_info:
+        lines.append(('ansicyan', title_info))
+        lines.append(('', '\n'))
+    # Add elapsed time
+    lines.append(('ansiyellow', f"Running Time: {elapsed_time:.1f} seconds"))
+    lines.append(('', '\n'))
+    
+    # Table header
+    header = f"{'Worker':<20} {'Activity':<50} {'Progress':>25} {'Status':>55} {'Max Area':>12}"
+    lines.append(('bold ansimagenta', header))
+    lines.append(('', '\n'))
+    lines.append(('', '─' * 165))
+    lines.append(('', '\n'))
+    
+    # Worker rows
     for batch_id in sorted(progress_dict.keys()):
         info = progress_dict[batch_id]
-        name = info.get('name', f'Batch-{batch_id}')
+        name = info.get('name', f'Batch-{batch_id}')[:20]
         processed = info.get('processed', 0)
         total = info.get('total', 1)
         max_area_worker = info.get('max_area', 0)
         done = info.get('done', False)
         checking_rect = info.get('checking_rect', '')
-        activity = info.get('activity', 'Idle')
+        activity = info.get('activity', 'Idle')[:50]
         
         percent = (processed / total) * 100 if total > 0 else 0
         progress_bar = '█' * int(percent // 5) + '░' * (20 - int(percent // 5))
@@ -227,37 +243,30 @@ def generate_progress_table(progress_dict, max_area, title_info=""):
         else:
             status = f"{processed}/{total}"
         
-        table.add_row(
-            name,
-            activity,
-            f"{progress_bar} {percent:.1f}%",
-            status,
-            str(max_area_worker)
-        )
+        row = f"{name:<20} {activity:<50} {progress_bar} {percent:>5.1f}% {status:>55} {max_area_worker:>12}"
+        if done:
+            lines.append(('ansigreen', row))
+        else:
+            lines.append(('', row))
+        lines.append(('', '\n'))
     
-    table.add_row(
-        "[bold]Overall Best[/bold]",
-        "",
-        "",
-        "",
-        f"[bold]{max_area}[/bold]",
-        style="bold green"
-    )
+    # Overall best
+    lines.append(('', '─' * 165))
+    lines.append(('', '\n'))
+    overall = f"{'Overall Best':<20} {'':<50} {'':<25} {'':<55} {max_area:>12}"
+    lines.append(('bold ansigreen', overall))
     
-    return table
+    return FormattedText(lines)
 
 def find_largest_rectangle(coords, num_processes=None):
     if num_processes is None:
         num_processes = cpu_count()
     
-    console = Console()
     import os
     main_pid = os.getpid()
-    console.print(f"[bold green]Using {num_processes} processes[/bold green]")
-    console.print(f"[bold cyan]Main Process PID: {main_pid}[/bold cyan]")
-    console.print(f"[bold cyan]To kill (mingw64): kill -9 {main_pid}[/bold cyan]")
-    console.print(f"[bold cyan]Or (Windows): taskkill /F /PID {main_pid}[/bold cyan]")
-    console.print(f"[bold yellow]Press Ctrl-C or ESC to stop[/bold yellow]\n")
+    
+    # Get command line
+    command_line = ' '.join(sys.argv)
     
     # Create a set of coord tuples for O(1) lookup
     coord_set = set(coords)
@@ -265,7 +274,6 @@ def find_largest_rectangle(coords, num_processes=None):
     # Generate all pairs
     pairs = [(i, j) for i in range(len(coords)) for j in range(i + 1, len(coords))]
     total = len(pairs)
-    console.print(f"[bold]Total rectangle pairs to check: {total:,}[/bold]")
     
     # Split pairs into batches for each process
     batch_size = max(1, total // num_processes)  # 1 batch per process
@@ -275,30 +283,16 @@ def find_largest_rectangle(coords, num_processes=None):
     progress_dict = manager.dict()
     stop_flag = manager.Value('i', 0)  # 0 = continue, 1 = stop
     
-    # Set up ESC key listener in a background thread
-    def key_listener():
-        import msvcrt
-        while stop_flag.value == 0:
-            if msvcrt.kbhit():
-                key = msvcrt.getch()
-                if key == b'\x1b':  # ESC key
-                    console.print("\n[bold red]ESC pressed - stopping all workers...[/bold red]")
-                    stop_flag.value = 1
-                    break
-            time.sleep(0.1)
-    
-    listener_thread = threading.Thread(target=key_listener, daemon=True)
-    listener_thread.start()
-    
     batches = []
     for batch_id, i in enumerate(range(0, len(pairs), batch_size)):
         batch = pairs[i:i + batch_size]
         batches.append((batch, coords, coord_set, progress_dict, batch_id, stop_flag))
     
-    console.print(f"[bold]Split into {len(batches)} batches[/bold]\n")
+    # Create title info
+    title_info = f"Command: {command_line} | Using {num_processes} processes | PID: {main_pid} | kill -9 {main_pid} (mingw64) | taskkill /F /PID {main_pid} (Windows) | Total pairs: {total:,} | Batches: {len(batches)}"
     
-    # Create title info for table
-    title_info = f"PID: {main_pid} | kill -9 {main_pid} (mingw64) | taskkill /F /PID {main_pid} (Windows) | Ctrl-C/ESC to stop"
+    # Track start time
+    start_time = time.time()
     
     # Process batches in parallel
     max_area = 0
@@ -307,27 +301,48 @@ def find_largest_rectangle(coords, num_processes=None):
     
     pool = Pool(processes=num_processes)
     
-    # Start the work by creating the iterator (this starts workers processing)
+    # Start the work by creating the iterator
     result_iterator = pool.imap_unordered(check_rectangle_batch, batches)
     
-    # Give workers a moment to start and update their status
+    # Give workers a moment to start
     time.sleep(0.5)
     
-    try:
-        with Live(console=console, refresh_per_second=4, screen=False) as live:
-            # Start background thread to continuously update display
-            display_running = threading.Event()
-            display_running.set()
-            
-            def update_display_loop():
-                while display_running.is_set():
-                    live.update(generate_progress_table(progress_dict, max_area, title_info))
-                    time.sleep(0.25)
-            
-            display_thread = threading.Thread(target=update_display_loop, daemon=True)
-            display_thread.start()
-            
-            # Process results as they come in
+    # Set up key bindings
+    kb = KeyBindings()
+    
+    @kb.add('c-c')
+    @kb.add('escape')
+    def _(event):
+        """Exit on Ctrl-C or ESC."""
+        stop_flag.value = 1
+        event.app.exit()
+    
+    # Create text control that updates
+    text_control = FormattedTextControl(
+        text=lambda: generate_progress_display(progress_dict, max_area, title_info, time.time() - start_time)
+    )
+    
+    # Create layout
+    root_container = HSplit([
+        Window(content=text_control, wrap_lines=False)
+    ])
+    
+    layout = Layout(root_container)
+    
+    # Create application
+    app = Application(
+        layout=layout,
+        key_bindings=kb,
+        full_screen=True,
+        mouse_support=False
+    )
+    
+    # Start background thread to process results
+    processing_complete = threading.Event()
+    
+    def process_results():
+        nonlocal max_area, max_rect, completed
+        try:
             for result in result_iterator:
                 if stop_flag.value == 1:
                     break
@@ -336,20 +351,43 @@ def find_largest_rectangle(coords, num_processes=None):
                     max_area = area
                     max_rect = rect
                 completed += 1
-            
-            # Stop display thread
-            display_running.clear()
-            display_thread.join(timeout=1)
+        except Exception as e:
+            pass
+        finally:
+            processing_complete.set()
+            time.sleep(0.5)  # Let final update render
+            try:
+                if app.is_running:
+                    app.exit()
+            except:
+                pass  # App already exited
+    
+    # Background thread to refresh display
+    def refresh_display():
+        while not processing_complete.is_set():
+            try:
+                if app.is_running:
+                    app.invalidate()
+            except:
+                pass
+            time.sleep(5.0)
+    
+    result_thread = threading.Thread(target=process_results, daemon=True)
+    result_thread.start()
+    
+    refresh_thread = threading.Thread(target=refresh_display, daemon=True)
+    refresh_thread.start()
+    
+    try:
+        # Run the application
+        app.run()
     except KeyboardInterrupt:
-        console.print("\n[bold red]Ctrl-C detected. Stopping all worker processes...[/bold red]")
         stop_flag.value = 1
-        time.sleep(0.5)  # Give workers a moment to see the stop flag
         pool.terminate()
         pool.join()
-        console.print("[bold red]All processes terminated.[/bold red]")
+        print("\nAll processes terminated.")
         sys.exit(1)
     except Exception as e:
-        console.print(f"\n[bold red]Error occurred: {e}[/bold red]")
         stop_flag.value = 1
         pool.terminate()
         pool.join()
@@ -359,11 +397,11 @@ def find_largest_rectangle(coords, num_processes=None):
         pool.join()
     
     if stop_flag.value == 1:
-        console.print("\n[bold yellow]Search stopped by user.[/bold yellow]")
+        print("\nSearch stopped by user.")
     else:
-        console.print("\n[bold green]✓ Rectangle search complete![/bold green]")
+        print("\n✓ Rectangle search complete!")
     if max_rect:
-        console.print(f"[bold yellow]Best rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})[/bold yellow]")
+        print(f"Best rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})")
     return max_area
 
 # Example usage:
@@ -373,7 +411,7 @@ if __name__ == "__main__":
     
     # Set UTF-8 encoding for Windows console
     if sys.platform == 'win32':
-        os.system('chcp 65001 >nul 2>&1')  # Set console code page to UTF-8
+        os.system('chcp 65001 >nul 2>&1')
         sys.stdout.reconfigure(encoding='utf-8')
         sys.stderr.reconfigure(encoding='utf-8')
     
@@ -381,12 +419,9 @@ if __name__ == "__main__":
         with open("day9_input_dean.txt") as f:
             input_text = f.read()
         coords = parse_input(input_text)
-        console = Console()
-        console.print(f"[bold]Number of vertices: {len(coords)}[/bold]")
+        print(f"Number of vertices: {len(coords)}")
         result = find_largest_rectangle(coords)
-        console.print(f"[bold green]Largest rectangle area: {result}[/bold green]")
+        print(f"Largest rectangle area: {result}")
     except KeyboardInterrupt:
-        console = Console()
-        console.print("\n[bold red]Interrupted by user.[/bold red]")
+        print("\nInterrupted by user.")
         sys.exit(1)
-
