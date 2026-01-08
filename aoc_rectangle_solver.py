@@ -1,5 +1,6 @@
-from multiprocessing import Pool, cpu_count, Manager
+from multiprocessing import Pool, cpu_count, Manager, current_process
 import itertools
+import time
 
 def parse_input(input_text):
     coords = []
@@ -54,9 +55,22 @@ def check_rectangle_batch(args):
     pairs, coords, coord_set = args
     max_area = 0
     max_rect = None
-    cache = {}
+    
+    # Progress tracking for this worker
+    total_pairs = len(pairs)
+    processed = 0
+    last_progress_time = time.time()
+    process_name = current_process().name
     
     for i, j in pairs:
+        processed += 1
+        
+        # Print progress every 2 seconds
+        current_time = time.time()
+        if current_time - last_progress_time >= 2.0:
+            percent = (processed / total_pairs) * 100
+            print(f"[{process_name}] Progress: {percent:.1f}% ({processed}/{total_pairs} pairs, max area: {max_area})")
+            last_progress_time = current_time
         x1, y1 = coords[i]
         x2, y2 = coords[j]
         
@@ -74,9 +88,9 @@ def check_rectangle_batch(args):
             continue
         
         # Check the other two corners first (fast rejection)
-        if (min_rx, max_ry) not in coord_set and not is_green_tile(min_rx, max_ry, coords, cache):
+        if (min_rx, max_ry) not in coord_set and not is_green_tile(min_rx, max_ry, coords):
             continue
-        if (max_rx, min_ry) not in coord_set and not is_green_tile(max_rx, min_ry, coords, cache):
+        if (max_rx, min_ry) not in coord_set and not is_green_tile(max_rx, min_ry, coords):
             continue
         
         # Check all points in rectangle
@@ -86,7 +100,7 @@ def check_rectangle_batch(args):
                 # Skip the corners we're using
                 if (x, y) == (x1, y1) or (x, y) == (x2, y2):
                     continue
-                if (x, y) not in coord_set and not is_green_tile(x, y, coords, cache):
+                if (x, y) not in coord_set and not is_green_tile(x, y, coords):
                     valid = False
                     break
             if not valid:
@@ -97,6 +111,8 @@ def check_rectangle_batch(args):
                 max_area = area
                 max_rect = (min_rx, min_ry, max_rx, max_ry)
     
+    # Final progress report
+    print(f"[{process_name}] Completed: {total_pairs} pairs, max area found: {max_area}")
     return max_area, max_rect
 
 def find_largest_rectangle(coords, num_processes=None):
@@ -127,7 +143,8 @@ def find_largest_rectangle(coords, num_processes=None):
     max_rect = None
     completed = 0
     
-    with Pool(processes=num_processes) as pool:
+    pool = Pool(processes=num_processes)
+    try:
         for result in pool.imap_unordered(check_rectangle_batch, batches):
             area, rect = result
             if area > max_area:
@@ -136,6 +153,15 @@ def find_largest_rectangle(coords, num_processes=None):
             completed += 1
             percent = completed * 100.0 / len(batches)
             print(f"Progress: {percent:.2f}% (max area: {max_area})", end="\r")
+    except KeyboardInterrupt:
+        print("\n\nKeyboardInterrupt detected. Terminating all worker processes...")
+        pool.terminate()
+        pool.join()
+        print("All processes terminated. Exiting.")
+        raise
+    else:
+        pool.close()
+        pool.join()
     
     print(f"\nRectangle search progress: 100.00% complete")
     if max_rect:
