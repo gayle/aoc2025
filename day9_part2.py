@@ -74,12 +74,15 @@ def find_result(coords):
             scanline_xs[y].append(x_cross)
 
     total_scanlines = max_y - min_y - 1
+    # Sort crossings once per scanline
+    for y in scanline_xs:
+        scanline_xs[y].sort()
+
     for idx, y in enumerate(range(min_y + 1, max_y)):
         if DEBUG and total_scanlines > 0 and idx % max(1, total_scanlines // 100) == 0:
             percent = (idx + 1) * 100 // total_scanlines
             print(f"Scanline fill progress: {percent}% complete", end="\r")
         x_crossings = scanline_xs[y]
-        x_crossings.sort()
         for i in range(0, len(x_crossings), 2):
             if i+1 >= len(x_crossings):
                 break
