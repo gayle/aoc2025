@@ -57,36 +57,28 @@ def find_result(coords):
     max_y = max(y for x, y in coords)
     # Build set of border tiles once
     border_tiles = set(coords)
-    # Use edge intersection logic for scanline fill
-    scanline_xs = {y: [] for y in range(min_y + 1, max_y)}
-    for i in range(len(coords)):
-        x1, y1 = coords[i]
-        x2, y2 = coords[(i + 1) % len(coords)]
-        # Ignore horizontal edges
-        if y1 == y2:
-            continue
-        # For each scanline y between y1 and y2 (exclusive), compute intersection
-        y_start, y_end = sorted([y1, y2])
-        for y in range(max(min_y + 1, y_start + 1), min(max_y, y_end + 1)):
-            dy = y2 - y1
-            dx = x2 - x1
-            x_cross = x1 + ((y - y1) * dx) // dy
-            scanline_xs[y].append(x_cross)
-
+    # Scanline processing: process one row at a time, discard after use
     total_scanlines = max_y - min_y - 1
-    # Sort crossings once per scanline
-    for y in scanline_xs:
-        scanline_xs[y].sort()
-
     for idx, y in enumerate(range(min_y + 1, max_y)):
+        # Compute all edge crossings for this scanline using even-odd rule with correct vertex handling
+        x_crossings = []
+        n = len(coords)
+        for i in range(n):
+            x1, y1 = coords[i]
+            x2, y2 = coords[(i + 1) % n]
+            # Only consider edges where scanline crosses strictly between y1 and y2, or touches a vertex that is a local minimum or maximum
+            if (y1 < y and y2 >= y) or (y2 < y and y1 >= y):
+                if y2 != y1:
+                    x_cross = x1 + (y - y1) * (x2 - x1) // (y2 - y1)
+                    x_crossings.append(x_cross)
+        x_crossings.sort()
         if DEBUG and total_scanlines > 0 and idx % max(1, total_scanlines // 100) == 0:
             percent = (idx + 1) * 100 // total_scanlines
             print(f"Scanline fill progress: {percent}% complete", end="\r")
-        x_crossings = scanline_xs[y]
         for i in range(0, len(x_crossings), 2):
             if i+1 >= len(x_crossings):
                 break
-            x_start = x_crossings[i] + 1
+            x_start = x_crossings[i]
             x_end = x_crossings[i+1]
             for x in range(x_start, x_end):
                 if (x, y) not in border_tiles:
