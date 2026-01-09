@@ -94,9 +94,9 @@ def check_rectangle_batch(args):
         
         processed += 1
         
-        # Update progress every second
+        # Update progress every 5 seconds to reduce Manager overhead
         current_time = time.time()
-        if current_time - last_update_time >= 1.0:
+        if current_time - last_update_time >= 5.0:
             progress_dict[batch_id] = {
                 'processed': processed,
                 'total': total_pairs,
@@ -134,10 +134,15 @@ def check_rectangle_batch(args):
             'activity': f'Checking corners: {area:,} area'
         }
         
-        # Check the other two corners first (fast rejection)
-        if (min_rx, max_ry) not in coord_set and not is_green_tile(min_rx, max_ry, coords):
-            continue
-        if (max_rx, min_ry) not in coord_set and not is_green_tile(max_rx, min_ry, coords):
+        # Batch check both corners (fast rejection)
+        corners_to_check = [(min_rx, max_ry), (max_rx, min_ry)]
+        valid_corners = True
+        for cx, cy in corners_to_check:
+            if (cx, cy) not in coord_set and not is_green_tile(cx, cy, coords):
+                valid_corners = False
+                break
+        
+        if not valid_corners:
             continue
         
         # Check all points in rectangle
@@ -204,8 +209,12 @@ def check_rectangle_batch(args):
 
 def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time=0):
     """Generate a rich table showing progress of all workers."""
-    time_str = f"\n[yellow]Running Time: {elapsed_time:.1f} seconds[/yellow]"
-    table_title = f"Rectangle Search Progress\n{title_info}{time_str}" if title_info else f"Rectangle Search Progress{time_str}"
+    hours = int(elapsed_time // 3600)
+    minutes = int((elapsed_time % 3600) // 60)
+    seconds = int(elapsed_time % 60)
+    time_str = f"\n[yellow]Running Time: {hours:02d}:{minutes:02d}:{seconds:02d}[/yellow]"
+    optimizations = "\n[green]Optimizations: 2x processes | 4x batches for load balancing | Sorted by area | Bounding box | Batch corners[/green]"
+    table_title = f"Rectangle Search Progress\n{title_info}{time_str}{optimizations}" if title_info else f"Rectangle Search Progress{time_str}{optimizations}"
     table = Table(title=table_title, show_header=True, header_style="bold magenta")
     table.add_column("Worker", style="cyan", width=20)
     table.add_column("Activity", style="white", width=50)
@@ -254,7 +263,7 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
 
 def find_largest_rectangle(coords, num_processes=None):
     if num_processes is None:
-        num_processes = cpu_count()
+        num_processes = cpu_count() * 2  # Use 2x cores for better CPU utilization
     
     console = Console()
     import os
@@ -296,8 +305,9 @@ def find_largest_rectangle(coords, num_processes=None):
     total = len(pairs)
     console.print(f"[bold]Total rectangle pairs to check: {total:,}[/bold]")
     
-    # Split pairs into batches for each process
-    batch_size = max(1, total // num_processes)  # 1 batch per process
+    # Split pairs into batches - create 4x more batches than processes for better load balancing
+    num_batches = num_processes * 4
+    batch_size = max(1, total // num_batches)
     
     # Create a manager for shared progress tracking and stop flag
     manager = Manager()
