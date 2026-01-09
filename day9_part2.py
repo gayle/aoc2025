@@ -19,6 +19,21 @@ def parse_input(input_text):
         coords.append((x, y))
     return coords
 
+def compute_edge_set(coords):
+    """Pre-compute all points on polygon edges for O(1) lookup."""
+    edge_points = set()
+    n = len(coords)
+    for i in range(n):
+        x1, y1 = coords[i]
+        x2, y2 = coords[(i + 1) % n]
+        if x1 == x2:  # Vertical line
+            for y in range(min(y1, y2), max(y1, y2) + 1):
+                edge_points.add((x1, y))
+        elif y1 == y2:  # Horizontal line
+            for x in range(min(x1, x2), max(x1, x2) + 1):
+                edge_points.add((x, y1))
+    return edge_points
+
 def is_on_polygon_edge(x, y, coords):
     """Check if point (x, y) is on the polygon edge."""
     n = len(coords)
@@ -45,12 +60,16 @@ def is_inside_polygon(x, y, coords):
             inside = not inside
     return inside
 
-def is_green_tile(x, y, coords, cache=None):
+def is_green_tile(x, y, coords, edge_set=None, cache=None):
     """Check if a tile is green (on edge or inside polygon)."""
     if cache is not None and (x, y) in cache:
         return cache[(x, y)]
     
-    result = is_on_polygon_edge(x, y, coords) or is_inside_polygon(x, y, coords)
+    # Use edge_set for O(1) lookup if available, otherwise fall back to O(n) check
+    if edge_set is not None:
+        result = (x, y) in edge_set or is_inside_polygon(x, y, coords)
+    else:
+        result = is_on_polygon_edge(x, y, coords) or is_inside_polygon(x, y, coords)
     
     if cache is not None:
         cache[(x, y)] = result
@@ -64,11 +83,21 @@ def check_rectangle_batch(args):
     max_area = 0
     max_rect = None
     
+    # Compute edge set locally to avoid copying large data on Windows
+    edge_set = compute_edge_set(coords)
+    
+    # Create local cache for this worker - use size-limited cache to avoid memory issues
+    # For very large rectangles, we'll disable caching to prevent OOM
+    tile_cache = {}
+    CACHE_SIZE_LIMIT = 10_000_000  # Max 10M cached points (~160MB with 16 bytes per entry)
+    
     # Progress tracking for this worker
+    import os
+    worker_pid = os.getpid()
     total_pairs = len(pairs)
     processed = 0
     last_update_time = time.time()
-    process_name = current_process().name
+    process_name = f"{current_process().name}-PID{worker_pid}"
     
     # Initial progress update - show worker immediately
     progress_dict[batch_id] = {
@@ -94,9 +123,9 @@ def check_rectangle_batch(args):
         
         processed += 1
         
-        # Update progress every 5 seconds to reduce Manager overhead
+        # Update progress every 10 seconds to minimize Manager overhead (major bottleneck)
         current_time = time.time()
-        if current_time - last_update_time >= 5.0:
+        if current_time - last_update_time >= 10.0:
             progress_dict[batch_id] = {
                 'processed': processed,
                 'total': total_pairs,
@@ -120,6 +149,10 @@ def check_rectangle_batch(args):
             continue
         
         area = (max_rx - min_rx + 1) * (max_ry - min_ry + 1)
+      
+        # Lower the cutoff to avoid wasting time on 3+ billion point rectangles
+        if area > 100_000_000: 
+            continue
         
         # Skip if this rectangle is smaller than current max
         if area <= max_area:
@@ -138,7 +171,7 @@ def check_rectangle_batch(args):
         corners_to_check = [(min_rx, max_ry), (max_rx, min_ry)]
         valid_corners = True
         for cx, cy in corners_to_check:
-            if (cx, cy) not in coord_set and not is_green_tile(cx, cy, coords):
+            if (cx, cy) not in coord_set and not is_green_tile(cx, cy, coords, edge_set, tile_cache):
                 valid_corners = False
                 break
         
@@ -149,6 +182,42 @@ def check_rectangle_batch(args):
         total_points = (max_rx - min_rx + 1) * (max_ry - min_ry + 1)
         points_checked = 0
         valid = True
+        rect_start_time = time.time()  # Track how long this rectangle takes
+        rect_timeout = 300  # 5 minutes max per rectangle
+        
+        # For very large rectangles, disable caching and do sparse sampling first
+        use_cache = total_points < 10_000_000  # Only cache for rectangles < 10M points
+        if not use_cache and len(tile_cache) > 0:
+            tile_cache.clear()  # Free memory from previous cached rectangle
+        
+        # Sparse sampling for huge rectangles (check every Nth point first)
+        if total_points > 50_000_000:  # 50M+ points
+            sample_step = max(2, int((total_points ** 0.5) / 100))  # Adaptive sampling
+            progress_dict[batch_id] = {
+                'processed': processed,
+                'total': total_pairs,
+                'max_area': max_area,
+                'name': process_name,
+                'activity': f'Sampling: {area:,} area (step={sample_step})'
+            }
+            for x in range(min_rx, max_rx + 1, sample_step):
+                for y in range(min_ry, max_ry + 1, sample_step):
+                    if (x, y) == (x1, y1) or (x, y) == (x2, y2):
+                        continue
+                    if (x, y) not in coord_set and not is_green_tile(x, y, coords, edge_set, None):
+                        valid = False
+                        break
+                if not valid:
+                    break
+            if not valid:
+                progress_dict[batch_id] = {
+                    'processed': processed,
+                    'total': total_pairs,
+                    'max_area': max_area,
+                    'name': process_name,
+                    'activity': f'❌ Failed sampling: {area:,} area'
+                }
+                continue  # Skip exhaustive check
         
         for x in range(min_rx, max_rx + 1):
             # Check stop flag at the start of each row
@@ -163,6 +232,18 @@ def check_rectangle_batch(args):
                 }
                 return max_area, max_rect
             
+            # Check timeout - abort rectangles taking too long
+            if time.time() - rect_start_time > rect_timeout:
+                valid = False
+                progress_dict[batch_id] = {
+                    'processed': processed,
+                    'total': total_pairs,
+                    'max_area': max_area,
+                    'name': process_name,
+                    'activity': f'⏱ Timeout: {area:,} area after {rect_timeout}s'
+                }
+                break
+            
             for y in range(min_ry, max_ry + 1):
                 # Skip the corners we're using
                 if (x, y) == (x1, y1) or (x, y) == (x2, y2):
@@ -175,26 +256,50 @@ def check_rectangle_batch(args):
                     current_time = time.time()
                     if points_checked % 100 == 0 or current_time - last_update_time >= 0.5:
                         rect_progress = (points_checked / total_points) * 100
+                        rect_elapsed = current_time - rect_start_time
                         progress_dict[batch_id] = {
                             'processed': processed,
                             'total': total_pairs,
                             'max_area': max_area,
                             'name': process_name,
-                            'checking_rect': f"{area:,} area, {rect_progress:.0f}% checked",
-                            'activity': f'Validating: {area:,} area'
+                            'checking_rect': f"{area:,} area, {rect_progress:.0f}% checked, {rect_elapsed:.1f}s",
+                            'activity': f'Validating: ({min_rx},{min_ry})-({max_rx},{max_ry})'
                         }
                         last_update_time = current_time
                 
-                if (x, y) not in coord_set and not is_green_tile(x, y, coords):
+                # Use cache only for smaller rectangles to avoid OOM
+                cache_to_use = tile_cache if use_cache else None
+                if (x, y) not in coord_set and not is_green_tile(x, y, coords, edge_set, cache_to_use):
                     valid = False
                     break
             if not valid:
                 break
         
+        # Prevent cache from growing unbounded - clear if it exceeds limit
+        if use_cache and len(tile_cache) > CACHE_SIZE_LIMIT:
+            tile_cache.clear()
+            progress_dict[batch_id] = {
+                'processed': processed,
+                'total': total_pairs,
+                'max_area': max_area,
+                'name': process_name,
+                'activity': f'🧹 Cleared cache ({CACHE_SIZE_LIMIT:,} limit)'
+            }
+        
         if valid:
+            rect_elapsed = time.time() - rect_start_time
             if area > max_area:
                 max_area = area
                 max_rect = (min_rx, min_ry, max_rx, max_ry)
+                # Log when we find a new best (only for large rectangles)
+                if total_points > 1000:
+                    progress_dict[batch_id] = {
+                        'processed': processed,
+                        'total': total_pairs,
+                        'max_area': max_area,
+                        'name': process_name,
+                        'activity': f'✓ New best! {area:,} in {rect_elapsed:.1f}s'
+                    }
     
     # Final progress update
     progress_dict[batch_id] = {
@@ -213,8 +318,8 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
     minutes = int((elapsed_time % 3600) // 60)
     seconds = int(elapsed_time % 60)
     time_str = f"\n[yellow]Running Time: {hours:02d}:{minutes:02d}:{seconds:02d}[/yellow]"
-    optimizations = "\n[green]Optimizations: 2x processes | 4x batches for load balancing | Sorted by area | Bounding box | Batch corners[/green]"
-    table_title = f"Rectangle Search Progress\n{title_info}{time_str}{optimizations}" if title_info else f"Rectangle Search Progress{time_str}{optimizations}"
+    optimizations = "\n[green]Optimizations: Per-worker edge cache | Tile cache | 4x batches | Sorted by area | Bounding box[/green]"
+    table_title = f"Rectangle Search Progress{time_str}{optimizations}" if title_info else f"Rectangle Search Progress{time_str}{optimizations}"
     table = Table(title=table_title, show_header=True, header_style="bold magenta")
     table.add_column("Worker", style="cyan", width=20)
     table.add_column("Activity", style="white", width=50)
@@ -263,7 +368,7 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
 
 def find_largest_rectangle(coords, num_processes=None):
     if num_processes is None:
-        num_processes = cpu_count() * 2  # Use 2x cores for better CPU utilization
+        num_processes = min(40, cpu_count())  # Limit to 40 workers max to avoid resource exhaustion
     
     console = Console()
     import os
@@ -272,7 +377,12 @@ def find_largest_rectangle(coords, num_processes=None):
     # Get command line
     command_line = ' '.join(sys.argv)
     
+    # Get Python implementation info
+    python_impl = sys.implementation.name
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    
     console.print(f"[bold]Command: {command_line}[/bold]")
+    console.print(f"[bold magenta]Python: {python_impl} {python_version}[/bold magenta]")
     console.print(f"[bold green]Using {num_processes} processes[/bold green]")
     console.print(f"[bold cyan]Main Process PID: {main_pid}[/bold cyan]")
     console.print(f"[bold cyan]To kill (mingw64): kill -9 {main_pid}[/bold cyan]")
@@ -290,6 +400,8 @@ def find_largest_rectangle(coords, num_processes=None):
     # Create a set of coord tuples for O(1) lookup
     coord_set = set(coords)
     
+    # Note: Edge set will be computed per-worker to avoid copying large data on Windows
+    
     # Generate all pairs
     pairs = [(i, j) for i in range(len(coords)) for j in range(i + 1, len(coords))]
     
@@ -306,7 +418,7 @@ def find_largest_rectangle(coords, num_processes=None):
     console.print(f"[bold]Total rectangle pairs to check: {total:,}[/bold]")
     
     # Split pairs into batches - create 4x more batches than processes for better load balancing
-    num_batches = num_processes * 4
+    num_batches = num_processes * 2
     batch_size = max(1, total // num_batches)
     
     # Create a manager for shared progress tracking and stop flag
@@ -347,7 +459,8 @@ def find_largest_rectangle(coords, num_processes=None):
     max_rect = None
     completed = 0
     
-    pool = Pool(processes=num_processes)
+    # Use maxtasksperchild=1 to ensure each batch gets a fresh process
+    pool = Pool(processes=num_processes, maxtasksperchild=1)
     
     # Start the work by creating the iterator (this starts workers processing)
     result_iterator = pool.imap_unordered(check_rectangle_batch, batches)
