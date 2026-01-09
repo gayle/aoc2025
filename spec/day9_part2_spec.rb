@@ -16,7 +16,7 @@ describe "day9_part2" do
             [9, 6], [10, 6], [11, 6],
             [9, 7], [11, 7]
         ] } 
-        When(:green_coordinates) { figure_out_green_coordinates([])}
-        Then{ expect(green_coordinates).to eq(expected_green_coordinates) }
+        When(:green_coordinates) { figure_out_green_coordinates(red_coordinates)}
+        Then{ expect(green_coordinates.sort).to match_array(expected_green_coordinates.sort) }
     end
 end
