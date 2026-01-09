@@ -151,3 +151,6 @@ dmypy.json
 *.swo
 *~
 .DS_Store
+
+# Ruby
+Gemfile.lock
