@@ -1,13 +1,6 @@
-DEBUG=false
+require_relative 'day9_common'
 
-def read_file(file_path)
-    coordinates = []
-    File.open(file_path, "r") do |file|
-        lines = File.readlines(file_path).map(&:chomp)
-        coordinates = lines.map{|line| line.split(",").map{|s| s.to_i } }
-    end
-    return coordinates
-end
+DEBUG=false
 
 def calc_area(coordinate1, coordinate2)
     width = (coordinate2[0] - coordinate1[0]).abs + 1
@@ -33,7 +26,7 @@ end
 
 if __FILE__ == $0
     filename = ARGV[0] || 'day9_input_gayle.txt'
-    coordinates = read_file(filename)
+    coordinates = Day9Common.read_file(filename)
     largest_rectangle = find_largest_rectangle_area(coordinates)
     puts "largest_rectangle: #{largest_rectangle}"
 end
