@@ -1,8 +1,15 @@
-"""Fill all green tiles in the polygon and write to file."""
+"""Fill all green tiles in the polygon and write to indexed file."""
+# Step 1: Generate indexed file (once)
+# python day9_fill_green_tiles.py day9_input_dean.txt
+
+# Step 2: Find rectangle (rerun as needed)
+# pypy day9_find_rectangle_from_tiles.py day9_green_tiles_dean_filled_indexed.txt
+
 import sys
 import os
 import time
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 def parse_input(input_text):
     coords = []
@@ -59,8 +66,8 @@ def is_green_tile(x, y, coords, edge_set):
     """Check if a tile is green (on edge or inside polygon)."""
     return (x, y) in edge_set or is_inside_polygon(x, y, coords)
 
-def fill_green_tiles(coords, output_filename):
-    """Fill all green tiles and write to file."""
+def fill_green_tiles_indexed(coords, output_filename):
+    """Fill all green tiles and write to indexed file format."""
     print(f"Parsing {len(coords)} red tile coordinates...")
     
     # Compute bounding box
@@ -82,46 +89,80 @@ def fill_green_tiles(coords, output_filename):
     edge_set = compute_edge_set(coords)
     print(f"Edge contains {len(edge_set):,} points")
     
-    # Scan all points and collect green tiles
-    print(f"Scanning grid and writing to {output_filename}...")
-    green_count = 0
+    # Scan all points and organize by row
+    print(f"Scanning grid and collecting green tiles...")
+    rows = defaultdict(list)
     points_processed = 0
     start_time = time.time()
     last_update = start_time
     
-    with open(output_filename, 'w') as f:
-        for x in range(min_x, max_x + 1):
-            for y in range(min_y, max_y + 1):
-                points_processed += 1
+    for x in range(min_x, max_x + 1):
+        for y in range(min_y, max_y + 1):
+            points_processed += 1
+            
+            # Update progress every 0.5 seconds
+            current_time = time.time()
+            if current_time - last_update >= 0.5:
+                percent = (points_processed / total_points) * 100
+                elapsed = current_time - start_time
+                rate = points_processed / elapsed if elapsed > 0 else 0
+                eta_seconds = (total_points - points_processed) / rate if rate > 0 else 0
+                end_time = datetime.now() + timedelta(seconds=eta_seconds)
+                end_time_str = end_time.strftime("%I:%M%p").lstrip('0').lower()
                 
-                # Update progress every 0.5 seconds
-                current_time = time.time()
-                if current_time - last_update >= 0.5:
-                    percent = (points_processed / total_points) * 100
-                    elapsed = current_time - start_time
-                    rate = points_processed / elapsed if elapsed > 0 else 0
-                    eta_seconds = (total_points - points_processed) / rate if rate > 0 else 0
-                    end_time = datetime.now() + timedelta(seconds=eta_seconds)
-                    end_time_str = end_time.strftime("%I:%M%p").lstrip('0').lower()
-                    
-                    print(f"\rProgress: {percent:.1f}% ({points_processed:,}/{total_points:,}) | "
-                          f"Green tiles: {green_count:,} | Rate: {rate:,.0f} pts/s | ETA: {end_time_str}", 
-                          end='', flush=True)
-                    last_update = current_time
-                    f.flush()  # Ensure writes are flushed to disk
-                
-                if is_green_tile(x, y, coords, edge_set):
-                    f.write(f"{x},{y}\n")
-                    green_count += 1
-        
-        # Final progress update
-        elapsed = time.time() - start_time
-        print(f"\rProgress: 100.0% ({total_points:,}/{total_points:,}) | "
-              f"Green tiles: {green_count:,} | Completed in {elapsed:.1f}s")
+                print(f"\rScanning: {percent:.1f}% ({points_processed:,}/{total_points:,}) | "
+                      f"Rate: {rate:,.0f} pts/s | ETA: {end_time_str}", 
+                      end='', flush=True)
+                last_update = current_time
+            
+            if is_green_tile(x, y, coords, edge_set):
+                rows[y].append(x)
     
-    print(f"\n✓ Wrote {green_count:,} green tiles to {output_filename}")
-    print(f"  Total time: {elapsed:.1f}s")
-    print(f"  Average rate: {total_points/elapsed:,.0f} points/second")
+    elapsed_scan = time.time() - start_time
+    total_green = sum(len(xs) for xs in rows.values())
+    print(f"\rScanning: 100.0% ({total_points:,}/{total_points:,}) | "
+          f"Found {total_green:,} green tiles in {elapsed_scan:.1f}s")
+    
+    # Write indexed format
+    print(f"\nWriting indexed format to {output_filename}...")
+    write_start = time.time()
+    last_update = write_start
+    rows_written = 0
+    total_rows = len(rows)
+    
+    with open(output_filename, 'w') as f:
+        for y in sorted(rows.keys()):
+            rows_written += 1
+            
+            # Update progress every 0.5 seconds
+            current_time = time.time()
+            if current_time - last_update >= 0.5:
+                percent = (rows_written / total_rows) * 100
+                elapsed = current_time - write_start
+                rate = rows_written / elapsed if elapsed > 0 else 0
+                eta_seconds = (total_rows - rows_written) / rate if rate > 0 else 0
+                end_time = datetime.now() + timedelta(seconds=eta_seconds)
+                end_time_str = end_time.strftime("%I:%M%p").lstrip('0').lower()
+                
+                print(f"\rWriting: {percent:.1f}% ({rows_written:,}/{total_rows:,}) | "
+                      f"Rate: {rate:,.0f} rows/s | ETA: {end_time_str}", 
+                      end='', flush=True)
+                last_update = current_time
+            
+            x_values = sorted(rows[y])
+            f.write(f"{y}:{','.join(map(str, x_values))}\n")
+    
+    elapsed_write = time.time() - write_start
+    print(f"\rWriting: 100.0% ({total_rows:,}/{total_rows:,}) | "
+          f"Completed in {elapsed_write:.1f}s")
+    
+    total_elapsed = time.time() - start_time
+    print(f"\n{'='*60}")
+    print(f"✓ Wrote {total_green:,} green tiles to {output_filename}")
+    print(f"  Scan time: {elapsed_scan:.1f}s ({total_points/elapsed_scan:,.0f} pts/s)")
+    print(f"  Write time: {elapsed_write:.1f}s ({total_rows/elapsed_write:,.0f} rows/s)")
+    print(f"  Total time: {total_elapsed:.1f}s")
+    print(f"{'='*60}")
     
     # Simple beep on completion
     try:
@@ -146,9 +187,9 @@ if __name__ == "__main__":
     
     print(f"Using input file: {input_filename}")
     
-    # Generate output filename
+    # Generate output filename (indexed format)
     base_name = input_filename.replace("_input_", "_green_tiles_")
-    output_filename = base_name.replace(".txt", "_filled.txt")
+    output_filename = base_name.replace(".txt", "_filled_indexed.txt")
     
     # Load red tile coordinates
     with open(input_filename, 'r') as f:
@@ -156,5 +197,6 @@ if __name__ == "__main__":
     
     coords = parse_input(input_text)
     
-    # Fill green tiles and write to file
-    fill_green_tiles(coords, output_filename)
+    # Fill green tiles and write to indexed file
+    fill_green_tiles_indexed(coords, output_filename)
+

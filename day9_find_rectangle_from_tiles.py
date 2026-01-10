@@ -1,44 +1,14 @@
-"""Find largest rectangle using pre-computed green tiles file."""
+"""Find largest rectangle using pre-computed indexed green tiles file."""
+# Step 1: Generate indexed file (once)
+# python day9_fill_green_tiles.py day9_input_dean.txt
+
+# Step 2: Find rectangle (rerun as needed)
+# pypy day9_find_rectangle_from_tiles.py day9_green_tiles_dean_filled_indexed.txt
+
 import sys
 import os
 import time
 from datetime import datetime, timedelta
-from collections import defaultdict
-
-def convert_to_indexed_format(input_file, output_file):
-    """
-    Convert x,y format to row-indexed format for faster rectangle checking.
-    Output format: y: x1,x2,x3,... (sorted x values for each row)
-    """
-    print(f"Converting {input_file} to indexed format...")
-    start_time = time.time()
-    
-    # Read and organize by rows
-    rows = defaultdict(list)
-    count = 0
-    
-    with open(input_file, 'r') as f:
-        for line in f:
-            count += 1
-            if count % 1_000_000 == 0:
-                print(f"  Read {count:,} tiles...", end='\r', flush=True)
-            
-            x, y = map(int, line.strip().split(','))
-            rows[y].append(x)
-    
-    print(f"\n  Total tiles: {count:,}")
-    print(f"  Unique rows: {len(rows):,}")
-    
-    # Sort x values in each row and write
-    print(f"Writing indexed format to {output_file}...")
-    with open(output_file, 'w') as f:
-        for y in sorted(rows.keys()):
-            x_values = sorted(rows[y])
-            f.write(f"{y}:{','.join(map(str, x_values))}\n")
-    
-    elapsed = time.time() - start_time
-    print(f"✓ Conversion complete in {elapsed:.1f}s")
-    return rows
 
 def load_indexed_tiles(indexed_file):
     """Load tiles from indexed format into memory-efficient structure."""
@@ -188,35 +158,29 @@ def find_largest_rectangle(rows):
     return max_area, max_rect
 
 if __name__ == "__main__":
-    # Determine input file
+    # Determine indexed file
     if len(sys.argv) >= 2:
-        tiles_file = sys.argv[1]
+        indexed_file = sys.argv[1]
     else:
-        # Auto-detect tiles file
-        if os.path.exists("day9_green_tiles_gayle_filled.txt"):
-            tiles_file = "day9_green_tiles_gayle_filled.txt"
-        elif os.path.exists("day9_green_tiles_dean_filled.txt"):
-            tiles_file = "day9_green_tiles_dean_filled.txt"
+        # Auto-detect indexed tiles file
+        if os.path.exists("day9_green_tiles_gayle_filled_indexed.txt"):
+            indexed_file = "day9_green_tiles_gayle_filled_indexed.txt"
+        elif os.path.exists("day9_green_tiles_dean_filled_indexed.txt"):
+            indexed_file = "day9_green_tiles_dean_filled_indexed.txt"
         else:
-            print("Error: No tiles file found. Provide filename as argument.")
+            print("Error: No indexed tiles file found.")
+            print("Run day9_fill_green_tiles.py first to generate the indexed file.")
             sys.exit(1)
     
-    print(f"Using tiles file: {tiles_file}")
-    
-    # Check if indexed version exists
-    indexed_file = tiles_file.replace(".txt", "_indexed.txt")
-    
     if not os.path.exists(indexed_file):
-        print(f"\nIndexed file not found. Creating {indexed_file}...")
-        rows = convert_to_indexed_format(tiles_file, indexed_file)
-    else:
-        # Check if indexed file is newer than source
-        if os.path.getmtime(tiles_file) > os.path.getmtime(indexed_file):
-            print(f"\nSource file is newer. Recreating {indexed_file}...")
-            rows = convert_to_indexed_format(tiles_file, indexed_file)
-        else:
-            print(f"\nUsing existing indexed file: {indexed_file}")
-            rows = load_indexed_tiles(indexed_file)
+        print(f"Error: File '{indexed_file}' not found.")
+        print("Run day9_fill_green_tiles.py first to generate the indexed file.")
+        sys.exit(1)
+    
+    print(f"Using indexed tiles file: {indexed_file}")
+    
+    # Load indexed tiles
+    rows = load_indexed_tiles(indexed_file)
     
     # Find largest rectangle
     max_area, max_rect = find_largest_rectangle(rows)
