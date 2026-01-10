@@ -151,3 +151,5 @@ dmypy.json
 *.swo
 *~
 .DS_Store
+day9_green_tiles_dean_filled.txt
+day9_green_tiles_dean_filled.tgz
