@@ -1,6 +1,8 @@
 import sys, os, time
 from copy import deepcopy
 
+# This took Dean's version and asked Copilot to optimize it.
+# The main change is to avoid making deep copies of the entire grid on each branch.
 class Day7Part2:
     DEBUG = False
     start_time = time.time()
