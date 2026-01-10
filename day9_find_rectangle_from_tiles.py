@@ -1,9 +1,12 @@
 """Find largest rectangle using pre-computed indexed green tiles file."""
-# Step 1: Generate indexed file (once)
-# python day9_fill_green_tiles.py day9_input_dean.txt
 
-# Step 2: Find rectangle (rerun as needed)
-# pypy day9_find_rectangle_from_tiles.py day9_green_tiles_dean_filled_indexed.txt
+# Step 1: Generate indexed file (once).
+# Note: Use PyPy for this step because it's faster.
+# ./pypy day9_fill_green_tiles.py day9_input_dean.txt
+
+# Step 2: Find largest rectangle (rerun as needed).
+# Note: Use PyPy for speed.
+# ./pypy day9_find_rectangle_from_tiles.py day9_green_tiles_dean_filled_indexed.txt
 
 import sys
 import os
