@@ -11,6 +11,7 @@
 import sys
 import os
 import time
+import winsound
 from datetime import datetime, timedelta
 
 def load_indexed_tiles(indexed_file):
@@ -193,12 +194,6 @@ if __name__ == "__main__":
         print(f"RESULT: {max_area:,}")
         print(f"Rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})")
         print(f"{'='*60}")
-        
-        # Play completion beep
-        try:
-            import winsound
-            winsound.Beep(1000, 500)
-        except:
-            pass
+        winsound.PlaySound("c:\\windows\\media\\tada.wav", winsound.SND_FILENAME)
     else:
         print("\nNo valid rectangle found.")
