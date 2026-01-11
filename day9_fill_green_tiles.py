@@ -8,7 +8,7 @@
 # Note: Use PyPy for speed.
 # ./pypy day9_find_rectangle_from_tiles.py day9_green_tiles_dean_filled_indexed.txt
 
-import sys, os, time, psutil, winsound
+import sys, os, time, psutil, common
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -122,7 +122,7 @@ def fill_green_tiles_indexed(coords, output_filename):
                     
                     print(f"\rScanning: {percent:.1f}% ({points_processed:,}/{total_points:,}) | "
                           f"Green: {total_green:,} | Rate: {rate:,.0f} pts/s | "
-                          f"Mem: {mem_avail_gb:.1f}GB | ETA: {end_time_str}", 
+                          f"Free RAM: {mem_avail_gb:.1f}GB | ETA: {end_time_str}", 
                           end='', flush=True)
                     last_update = current_time
                 
@@ -153,6 +153,11 @@ def fill_green_tiles_indexed(coords, output_filename):
         pass  # Silently fail if sound doesn't work
 
 if __name__ == "__main__":
+    # Print Python implementation and command line
+    print(f"Python: {sys.executable}")
+    print(f"Command: {' '.join(sys.argv)}")
+    print()
+
     # Determine input file
     if len(sys.argv) == 2:
         input_filename = sys.argv[1]
@@ -181,4 +186,4 @@ if __name__ == "__main__":
     # Fill green tiles and write to indexed file
     fill_green_tiles_indexed(coords, output_filename)
 
-    winsound.PlaySound("c:\\windows\\media\\tada.wav", winsound.SND_FILENAME)
+    common.multibeep()
