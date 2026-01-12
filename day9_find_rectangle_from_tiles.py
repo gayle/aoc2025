@@ -15,7 +15,11 @@ import common
 import psutil
 from datetime import datetime, timedelta
 
-DEFAULT_MIN_AREA_THRESHOLD = 8_000_000  # Default minimum area
+# Enable unicode output on Windows
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
+
+DEFAULT_MIN_AREA_THRESHOLD = 100_000_000  # Default minimum area
 MIN_AREA_THRESHOLD = DEFAULT_MIN_AREA_THRESHOLD  # Will be set from command line
 
 def load_file_index(indexed_file):
@@ -44,20 +48,14 @@ def load_file_index(indexed_file):
     
     return index
 
-def load_corners_from_file(indexed_file):
-    """Load pre-extracted corners from .corners file."""
+def load_corners_metadata(indexed_file):
+    """Load just the bounding box metadata from corners file."""
     corners_file = indexed_file.rsplit('.', 1)[0] + '.corners'
     
     if not os.path.exists(corners_file):
         print(f"Error: Corners file '{corners_file}' not found.")
         print(f"Run: python day9_extract_corners.py {indexed_file}")
         sys.exit(1)
-    
-    print(f"Loading corners from {corners_file}...")
-    start_time = time.time()
-    
-    corners = []
-    bounding_box = None
     
     with open(corners_file, 'r') as f:
         # Skip comment line
@@ -67,29 +65,59 @@ def load_corners_from_file(indexed_file):
         bbox_line = f.readline().strip()
         min_x, max_x, min_y, max_y = map(int, bbox_line.split(','))
         bounding_box = (min_x, max_x, min_y, max_y)
+    
+    return corners_file, bounding_box
+
+def stream_corners_batch(corners_file, start_pos, batch_size=50000):
+    """Stream a batch of corners from file starting at position."""
+    corners_set = set()  # Use set to deduplicate
+    
+    with open(corners_file, 'r') as f:
+        f.seek(start_pos)
         
-        # Read corners
-        for i, line in enumerate(f):
-            x_str, y_str = line.strip().split(',')
-            corners.append((int(x_str), int(y_str)))
+        count = 0
+        while count < batch_size:
+            line = f.readline()
+            if not line:
+                break
             
-            if (i + 1) % 100_000 == 0:
-                # Check memory while loading
-                mem = psutil.virtual_memory()
-                mem_avail_mb = mem.available / (1024**2)
-                if mem_avail_mb < 500:
-                    print(f"\n\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 500MB)")
-                    print("Terminating to prevent system instability...")
-                    sys.exit(1)
+            # Skip metadata lines
+            if line.startswith('#') or ',' not in line:
+                continue
                 
-                mem_avail_gb = mem.available / (1024**3)
-                print(f"  Loaded {i+1:,} corners | Free RAM: {mem_avail_gb:.1f}GB", end='\r', flush=True)
+            parts = line.strip().split(',')
+            if len(parts) == 2:
+                corners_set.add((int(parts[0]), int(parts[1])))
+                count += 1
+        
+        end_pos = f.tell()
     
-    elapsed = time.time() - start_time
-    print(f"\n✓ Loaded {len(corners):,} corners in {elapsed:.1f}s")
-    print(f"  Bounding box: x=[{bounding_box[0]}, {bounding_box[1]}], y=[{bounding_box[2]}, {bounding_box[3]}]\n")
+    return list(corners_set), end_pos
+
+def filter_corners_by_location(corners, bounding_box, min_area_threshold):
+    """Filter corners that could potentially form rectangles >= min_area_threshold."""
+    min_x, max_x, min_y, max_y = bounding_box
     
-    return corners, bounding_box
+    # Calculate minimum dimensions needed
+    # For a rectangle to have area >= threshold, we need width * height >= threshold
+    # So we need at least one dimension to be >= sqrt(threshold)
+    min_dimension = int(min_area_threshold ** 0.5)
+    
+    filtered = []
+    for x, y in corners:
+        # Check if this corner could form a large enough rectangle
+        # Maximum possible width from this corner
+        max_width = max(x - min_x, max_x - x)
+        # Maximum possible height from this corner  
+        max_height = max(y - min_y, max_y - y)
+        
+        # Could this corner form a rectangle >= threshold?
+        max_possible_area = (max_width + 1) * (max_height + 1)
+        
+        if max_possible_area >= min_area_threshold:
+            filtered.append((x, y))
+    
+    return filtered
 
 def load_row_from_file(indexed_file, file_index, y):
     """Load a single row from file using the index."""
@@ -99,19 +127,43 @@ def load_row_from_file(indexed_file, file_index, y):
     with open(indexed_file, 'r') as f:
         f.seek(file_index[y])
         line = f.readline()
-        y_str, x_str = line.strip().split(':', 1)
+        
+        # Handle empty or malformed lines
+        if not line or ':' not in line:
+            return None
+        
+        parts = line.strip().split(':', 1)
+        if len(parts) != 2:
+            return None
+            
+        y_str, x_str = parts
         return set(map(int, x_str.split(',')))
 
-def find_largest_rectangle(indexed_file, file_index, corners, bounding_box):
-    """Find largest rectangle where all interior points are green."""
-    print("Finding largest rectangle...")
+def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box):
+    """Find largest rectangle by streaming corners from file in batches."""
+    print("Finding largest rectangle (streaming mode)...")
     
     min_x, max_x, min_y, max_y = bounding_box
-    print(f"Total corner candidates: {len(corners):,}")
+    print(f"Bounding box: x=[{min_x}, {max_x}], y=[{min_y}, {max_y}]")
     
-    # Generate all pairs of corners
-    total_pairs = len(corners) * (len(corners) - 1) // 2
-    print(f"Total pairs to check: {total_pairs:,}")
+    # Get file size and estimate corner count
+    file_size = os.path.getsize(corners_file)
+    with open(corners_file, 'r') as f:
+        f.readline()  # Skip comment
+        f.readline()  # Skip bounding box
+        data_start = f.tell()
+    
+    estimated_corners = (file_size - data_start) // 20  # Rough estimate
+    print(f"Estimated corners: ~{estimated_corners:,}")
+    
+    # Process corners in batches
+    BATCH_SIZE = 500000
+    
+    # Estimate total batches
+    estimated_batches = (estimated_corners + BATCH_SIZE - 1) // BATCH_SIZE
+    estimated_pairs = (estimated_corners * (estimated_corners - 1)) // 2
+    print(f"Estimated batches: ~{estimated_batches}")
+    print(f"Estimated pairs: ~{estimated_pairs:,}")
     
     max_area = 0
     max_rect = None
@@ -119,104 +171,258 @@ def find_largest_rectangle(indexed_file, file_index, corners, bounding_box):
     start_time = time.time()
     last_update = start_time
     
-    # Sort corners by potential area (descending)
-    print("Sorting pairs by potential area...")
-    pairs = []
-    for i in range(len(corners)):
-        for j in range(i + 1, len(corners)):
-            x1, y1 = corners[i]
-            x2, y2 = corners[j]
-            if x1 != x2 and y1 != y2:
-                area = abs(x2 - x1 + 1) * abs(y2 - y1 + 1)
-                # Filter out small rectangles early
-                if area >= MIN_AREA_THRESHOLD:
-                    pairs.append((area, i, j))
+    batch_num = 0
     
-    pairs.sort(reverse=True)
-    print(f"Valid rectangle pairs: {len(pairs):,}")
-    
-    print("Checking rectangles...\n")
-    
-    # Cache for recently used rows (limit to 100 rows)
+    # Cache for recently used rows
     row_cache = {}
     
-    for area, i, j in pairs:
-        checked += 1
+    # First batch position (after metadata)
+    pos_i = data_start
+    
+    print("Checking rectangles in batches...\n")
+    
+    while True:
+        # Load batch i
+        batch_i_raw, new_pos_i = stream_corners_batch(corners_file, pos_i, BATCH_SIZE)
+        if not batch_i_raw:
+            break
         
-        # Skip if too small
-        if area < MIN_AREA_THRESHOLD:
+        # Filter corners by location
+        batch_i = filter_corners_by_location(batch_i_raw, bounding_box, MIN_AREA_THRESHOLD)
+        
+        if not batch_i:
+            # All corners filtered out, move to next batch
+            pos_i = new_pos_i
             continue
         
-        # Progress update
-        current_time = time.time()
-        if current_time - last_update >= 1.0:
-            percent = (checked / len(pairs)) * 100
-            elapsed = current_time - start_time
-            rate = checked / elapsed if elapsed > 0 else 0
-            eta_seconds = (len(pairs) - checked) / rate if rate > 0 else 0
-            end_time = datetime.now() + timedelta(seconds=eta_seconds)
-            end_time_str = end_time.strftime("%I:%M%p").lstrip('0').lower()
-            
-            # Get available memory
-            mem = psutil.virtual_memory()
-            mem_avail_gb = mem.available / (1024**3)
-            mem_avail_mb = mem.available / (1024**2)
-            
-            # Check if running out of memory
-            if mem_avail_mb < 500:
-                print(f"\n\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 500MB)")
-                print("Terminating to prevent system instability...")
-                sys.exit(1)
-            
-            print(f"{percent:.1f}% | Progress: ({checked:,}/{len(pairs):,}) | "
-                  f"Best: {max_area:,} | Rate: {rate:,.0f} pairs/s | "
-                  f"Free RAM: {mem_avail_gb:.1f}GB | ETA: {end_time_str}", 
-                  end='\r', flush=True)
-            last_update = current_time
+        batch_num += 1
         
-        # Skip if smaller than current best
-        if area <= max_area:
-            continue
+        # Display batch start info
+        mem = psutil.virtual_memory()
+        mem_avail_gb = mem.available / (1024**3)
+        print(f"\nBatch {batch_num}/{estimated_batches}: {len(batch_i):,} corners (filtered from {len(batch_i_raw):,}) | Free RAM: {mem_avail_gb:.1f}GB")
         
-        x1, y1 = corners[i]
-        x2, y2 = corners[j]
-        
-        min_rx, max_rx = min(x1, x2), max(x1, x2)
-        min_ry, max_ry = min(y1, y2), max(y1, y2)
-        
-        # Check if rectangle is valid (all points are green)
-        valid = True
-        for y in range(min_ry, max_ry + 1):
-            # Load row from cache or file
-            if y not in row_cache:
-                # Limit cache size
-                if len(row_cache) > 100:
-                    row_cache.clear()
+        # Check pairs within this batch
+        batch_pairs = len(batch_i) * (len(batch_i) - 1) // 2
+        batch_checked = 0
+        batch_evaluated = 0  # Total pairs evaluated (including filtered)
+        for idx1 in range(len(batch_i)):
+            corner1 = batch_i[idx1]
+            x1, y1 = corner1
+            for idx2 in range(idx1 + 1, len(batch_i)):
+                corner2 = batch_i[idx2]
+                x2, y2 = corner2
                 
-                row_xs = load_row_from_file(indexed_file, file_index, y)
-                if row_xs is None:
-                    valid = False
-                    break
-                row_cache[y] = row_xs
-            else:
-                row_xs = row_cache[y]
-            
-            # Check if all x values in this row are present
-            for x in range(min_rx, max_rx + 1):
-                if x not in row_xs:
-                    valid = False
-                    break
-            
-            if not valid:
-                break
+                batch_evaluated += 1
+                
+                # Quick filters
+                if x1 == x2 or y1 == y2:
+                    continue
+                
+                # Calculate area only if coordinates differ
+                area = abs(x2 - x1 + 1) * abs(y2 - y1 + 1)
+                if area < MIN_AREA_THRESHOLD or area <= max_area:
+                    continue
+                
+                checked += 1
+                batch_checked += 1
+                
+                # Progress update - show every 50K evaluations
+                if batch_evaluated % 50000 == 0:
+                    current_time = time.time()
+                    elapsed = current_time - start_time
+                    eval_rate = batch_evaluated / (elapsed - (last_update - 1.0)) if elapsed > 0 else 0
+                    batch_percent = (batch_evaluated / batch_pairs) * 100 if batch_pairs > 0 else 0
+                    
+                    mem = psutil.virtual_memory()
+                    mem_avail_gb = mem.available / (1024**3)
+                    mem_avail_mb = mem.available / (1024**2)
+                    
+                    if mem_avail_mb < 200:
+                        print(f"\n\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 200MB)")
+                        print("Terminating to prevent system instability...")
+                        sys.exit(1)
+                    
+                    print(f"Batch {batch_num} (within) {batch_percent:.1f}% | Eval: {batch_evaluated:,}/{batch_pairs:,} | "
+                          f"Passed: {batch_checked:,} | Best: {max_area:,} | RAM: {mem_avail_gb:.1f}GB", 
+                          end='\r', flush=True)
+                    last_update = current_time
+                
+                # Check rectangle validity
+                min_rx, max_rx = min(x1, x2), max(x1, x2)
+                min_ry, max_ry = min(y1, y2), max(y1, y2)
+                
+                valid = True
+                for y in range(min_ry, max_ry + 1):
+                    if y not in row_cache:
+                        if len(row_cache) > 100:
+                            row_cache.clear()
+                        row_xs = load_row_from_file(indexed_file, file_index, y)
+                        if row_xs is None:
+                            valid = False
+                            break
+                        row_cache[y] = row_xs
+                    else:
+                        row_xs = row_cache[y]
+                    
+                    for x in range(min_rx, max_rx + 1):
+                        if x not in row_xs:
+                            valid = False
+                            break
+                    
+                    if not valid:
+                        break
+                
+                if valid:
+                    max_area = area
+                    max_rect = (min_rx, min_ry, max_rx, max_ry)
+                    print(f"\n✓ New best: {max_area:,} at ({min_rx},{min_ry})-({max_rx},{max_ry})")
         
-        if valid:
-            max_area = area
-            max_rect = (min_rx, min_ry, max_rx, max_ry)
-            print(f"\n✓ New best: {max_area:,} at ({min_rx},{min_ry})-({max_rx},{max_ry})")
+        # Check pairs between batch i and all subsequent batches
+        pos_j = new_pos_i
+        batch_j_num = batch_num
+        cross_batch_start_time = time.time()
+        cross_batches_processed = 0
+        
+        print(f"  Cross-checking batch {batch_num} with subsequent batches...")
+        
+        while True:
+            batch_j_raw, new_pos_j = stream_corners_batch(corners_file, pos_j, BATCH_SIZE)
+            if not batch_j_raw:
+                break
+            
+            # Filter batch j corners
+            batch_j = filter_corners_by_location(batch_j_raw, bounding_box, MIN_AREA_THRESHOLD)
+            
+            if not batch_j:
+                # All corners filtered out, move to next batch
+                pos_j = new_pos_j
+                continue
+            
+            batch_j_num += 1
+            cross_batches_processed += 1
+            cross_pairs = len(batch_i) * len(batch_j)
+            cross_checked = 0
+            cross_evaluated = 0  # Total pairs evaluated in this cross-batch
+            
+            # Show which subsequent batch we're checking
+            cross_elapsed = time.time() - cross_batch_start_time
+            cross_rate = cross_batches_processed / cross_elapsed if cross_elapsed > 0 else 0
+            cross_eta_str = "?"
+            if cross_rate > 0 and estimated_corners > 0:
+                # Estimate total batches from file size
+                remaining_batches = max(0, (estimated_corners // BATCH_SIZE) - batch_j_num)
+                cross_eta_sec = remaining_batches / cross_rate
+                cross_eta_str = str(timedelta(seconds=int(cross_eta_sec)))
+            
+            print(f"  Checking batch {batch_num}×{batch_j_num} ({cross_batches_processed:,} cross-batches done, "
+                  f"{cross_rate:.1f} batches/s, ETA: {cross_eta_str})")
+            
+            for idx1 in range(len(batch_i)):
+                corner1 = batch_i[idx1]
+                x1, y1 = corner1
+                for idx2 in range(len(batch_j)):
+                    corner2 = batch_j[idx2]
+                    x2, y2 = corner2
+                    
+                    cross_evaluated += 1
+                    
+                    # Quick filters - avoid same x or y coordinates
+                    if x1 == x2 or y1 == y2:
+                        continue
+                    
+                    # Calculate area and check thresholds
+                    area = abs(x2 - x1 + 1) * abs(y2 - y1 + 1)
+                    if area < MIN_AREA_THRESHOLD or area <= max_area:
+                        continue
+                    
+                    checked += 1
+                    cross_checked += 1
+                    
+                    # Progress update - show every 50K evaluations
+                    if cross_evaluated % 50000 == 0:
+                        current_time = time.time()
+                        elapsed = current_time - start_time
+                        cross_percent = (cross_evaluated / cross_pairs) * 100 if cross_pairs > 0 else 0
+                        
+                        mem = psutil.virtual_memory()
+                        mem_avail_gb = mem.available / (1024**3)
+                        mem_avail_mb = mem.available / (1024**2)
+                        
+                        if mem_avail_mb < 200:
+                            print(f"\n\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 200MB)")
+                            print("Terminating to prevent system instability...")
+                            sys.exit(1)
+                        
+                        # Show progress within this cross-batch pair
+                        print(f"Batch {batch_num}×{batch_j_num} {cross_percent:.1f}% | Eval: {cross_evaluated:,}/{cross_pairs:,} | "
+                              f"Passed: {cross_checked:,} | Best: {max_area:,} | RAM: {mem_avail_gb:.1f}GB", 
+                              end='\r', flush=True)
+                        last_update = current_time
+                    
+                    # Check rectangle validity
+                    min_rx, max_rx = min(x1, x2), max(x1, x2)
+                    min_ry, max_ry = min(y1, y2), max(y1, y2)
+                    
+                    valid = True
+                    for y in range(min_ry, max_ry + 1):
+                        if y not in row_cache:
+                            if len(row_cache) > 100:
+                                row_cache.clear()
+                            row_xs = load_row_from_file(indexed_file, file_index, y)
+                            if row_xs is None:
+                                valid = False
+                                break
+                            row_cache[y] = row_xs
+                        else:
+                            row_xs = row_cache[y]
+                        
+                        for x in range(min_rx, max_rx + 1):
+                            if x not in row_xs:
+                                valid = False
+                                break
+                        
+                        if not valid:
+                            break
+                    
+                    if valid:
+                        max_area = area
+                        max_rect = (min_rx, min_ry, max_rx, max_ry)
+                        print(f"\n✓ New best: {max_area:,} at ({min_rx},{min_ry})-({max_rx},{max_ry})")
+            
+            pos_j = new_pos_j
+        
+        # Move to next batch
+        pos_i = new_pos_i
+        
+        # Progress update after completing batch
+        current_time = time.time()
+        elapsed = current_time - start_time
+        rate = checked / elapsed if elapsed > 0 else 0
+        
+        # Calculate progress and ETA
+        percent = (batch_num / estimated_batches) * 100 if estimated_batches > 0 else 0
+        eta_seconds = ((estimated_batches - batch_num) / batch_num) * elapsed if batch_num > 0 else 0
+        end_time = datetime.now() + timedelta(seconds=eta_seconds)
+        end_time_str = end_time.strftime("%I:%M%p").lstrip('0').lower()
+        
+        mem = psutil.virtual_memory()
+        mem_avail_gb = mem.available / (1024**3)
+        mem_avail_mb = mem.available / (1024**2)
+        
+        # Check memory
+        if mem_avail_mb < 200:
+            print(f"\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 200MB)")
+            print("Terminating to prevent system instability...")
+            sys.exit(1)
+        
+        print(f"{percent:.1f}% | Batch {batch_num}/{estimated_batches} | Checked: {checked:,} | "
+              f"Best: {max_area:,} | Rate: {rate:,.0f} pairs/s | "
+              f"Free RAM: {mem_avail_gb:.1f}GB | ETA: {end_time_str}")
+        last_update = current_time
     
     elapsed = time.time() - start_time
-    print(f"\n\n✓ Search complete in {elapsed:.1f}s")
+    print(f"\n✓ Search complete in {elapsed:.1f}s")
     print(f"  Checked {checked:,} pairs")
     print(f"  Rate: {checked/elapsed:,.0f} pairs/second")
     
@@ -263,11 +469,14 @@ if __name__ == "__main__":
     # Load pre-built file index
     file_index = load_file_index(indexed_file)
     
-    # Load pre-extracted corners and bounding box
-    corners, bounding_box = load_corners_from_file(indexed_file)
+    # Load corners metadata (bounding box only)
+    corners_file, bounding_box = load_corners_metadata(indexed_file)
     
-    # Find largest rectangle (loads rows on-demand from file)
-    max_area, max_rect = find_largest_rectangle(indexed_file, file_index, corners, bounding_box)
+    print(f"Corners file: {corners_file}")
+    print(f"Bounding box: x=[{bounding_box[0]}, {bounding_box[1]}], y=[{bounding_box[2]}, {bounding_box[3]}]\n")
+    
+    # Find largest rectangle (streams corners from file in batches)
+    max_area, max_rect = find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
     
     if max_rect:
         print(f"\n{'='*60}")
