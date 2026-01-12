@@ -17,7 +17,7 @@
     
     Single-process, PyPy optimized.
 
-Or:
+Note: There is a multiprocess version, but it runs out of memory. According to copilot: The multiprocessing version won't work with your dataset - it requires loading all corners into memory before processing can begin. With your massive corner file, you'll always hit the memory limit during the loading phase.
 
     python day9_find_rectangle_from_tiles_mp.py day9_green_tiles_dean_filled_indexed.txt
 
