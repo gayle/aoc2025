@@ -16,7 +16,11 @@ import psutil
 from datetime import datetime, timedelta
 from multiprocessing import Pool, Manager, cpu_count
 
-DEFAULT_MIN_AREA_THRESHOLD = 8_000_000  # Default minimum area
+# Enable unicode output on Windows
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
+
+DEFAULT_MIN_AREA_THRESHOLD = 100_000_000  # Default minimum area
 MIN_AREA_THRESHOLD = DEFAULT_MIN_AREA_THRESHOLD  # Will be set from command line
 
 def load_file_index(indexed_file):
@@ -60,6 +64,9 @@ def load_corners_from_file(indexed_file):
     corners = []
     bounding_box = None
     
+    # Get file size for progress tracking
+    file_size = os.path.getsize(corners_file)
+    
     with open(corners_file, 'r') as f:
         # Skip comment line
         f.readline()
@@ -70,21 +77,36 @@ def load_corners_from_file(indexed_file):
         bounding_box = (min_x, max_x, min_y, max_y)
         
         # Read corners
-        for i, line in enumerate(f):
+        i = 0
+        while True:
+            line = f.readline()
+            if not line:
+                break
+            
             x_str, y_str = line.strip().split(',')
             corners.append((int(x_str), int(y_str)))
+            i += 1
             
-            if (i + 1) % 100_000 == 0:
+            if i % 100_000 == 0:
                 # Check memory while loading
                 mem = psutil.virtual_memory()
                 mem_avail_mb = mem.available / (1024**2)
-                if mem_avail_mb < 500:
-                    print(f"\n\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 500MB)")
+                if mem_avail_mb < 200:
+                    print(f"\n\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 200MB)")
                     print("Terminating to prevent system instability...")
                     sys.exit(1)
                 
+                # Calculate progress metrics
+                file_pos = f.tell()
+                percent = (file_pos / file_size) * 100 if file_size > 0 else 0
+                elapsed = time.time() - start_time
+                rate = i / elapsed if elapsed > 0 else 0
+                eta_seconds = ((file_size - file_pos) / file_pos) * elapsed if file_pos > 0 else 0
+                end_time = datetime.now() + timedelta(seconds=eta_seconds)
+                end_time_str = end_time.strftime("%I:%M%p").lstrip('0').lower()
+                
                 mem_avail_gb = mem.available / (1024**3)
-                print(f"  Loaded {i+1:,} corners | Free RAM: {mem_avail_gb:.1f}GB", end='\r', flush=True)
+                print(f"  {percent:.1f}% | Loaded {i:,} corners | Rate: {rate:,.0f}/s | Free RAM: {mem_avail_gb:.1f}GB | ETA: {end_time_str}", end='\r', flush=True)
     
     elapsed = time.time() - start_time
     print(f"\n✓ Loaded {len(corners):,} corners in {elapsed:.1f}s")
@@ -274,8 +296,8 @@ def find_largest_rectangle_mp(indexed_file, file_index, corners, bounding_box, n
             mem_avail_mb = mem.available / (1024**2)
             
             # Check if running out of memory
-            if mem_avail_mb < 500:
-                print(f"\n\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 500MB)")
+            if mem_avail_mb < 200:
+                print(f"\n\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 200MB)")
                 print("Terminating to prevent system instability...")
                 pool.terminate()
                 pool.join()
