@@ -72,6 +72,7 @@ def extract_corners_to_file(indexed_file):
     
     print(f"\nPass 2: Writing final file with metadata...")
     # Second pass: write final file with bounding box metadata at top
+    pass2_start = time.time()
     with open(temp_file, 'r') as f_in, open(corners_file, 'w') as f_out:
         # Write metadata header
         f_out.write(f"# min_x,max_x,min_y,max_y\n")
@@ -94,8 +95,18 @@ def extract_corners_to_file(indexed_file):
                         os.remove(corners_file)
                     sys.exit(1)
                 
+                # Calculate progress metrics
+                percent = (line_count / corner_count) * 100 if corner_count > 0 else 0
+                elapsed = time.time() - pass2_start
+                rate = line_count / elapsed if elapsed > 0 else 0
+                eta_seconds = (corner_count - line_count) / rate if rate > 0 else 0
+                
+                from datetime import datetime, timedelta
+                end_time = datetime.now() + timedelta(seconds=eta_seconds)
+                end_time_str = end_time.strftime("%I:%M%p").lstrip('0').lower()
+                
                 mem_avail_gb = mem.available / (1024**3)
-                print(f"  Wrote {line_count:,} corners | Free RAM: {mem_avail_gb:.1f}GB", end='\r', flush=True)
+                print(f"  {percent:.1f}% | Wrote {line_count:,}/{corner_count:,} | Rate: {rate:,.0f}/s | Free RAM: {mem_avail_gb:.1f}GB | ETA: {end_time_str}", end='\r', flush=True)
     
     # Clean up temp file
     os.remove(temp_file)
@@ -107,6 +118,10 @@ def extract_corners_to_file(indexed_file):
     print(f"  Bounding box: x=[{min_x}, {max_x}], y=[{min_y}, {max_y}]")
     print(f"  File size: {file_size_mb:.2f} MB")
     print(f"  Corners file: {corners_file}")
+    print(f"\nNext step:")
+    print(f"  ./pypy day9_find_rectangle_from_tiles.py {indexed_file}")
+    print(f"  or")
+    print(f"  python day9_find_rectangle_from_tiles_mp.py {indexed_file}")
     
     return corners_file
 

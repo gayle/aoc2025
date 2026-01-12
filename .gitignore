@@ -151,11 +151,14 @@ dmypy.json
 *.swo
 *~
 .DS_Store
-day9_green_tiles_dean_filled.txt
-day9_green_tiles_dean_filled.tgz
-day9_green_tiles_dean_filled_indexed.txt
 
 # Ruby
 Gemfile.lock
+
+# Misc temp files
+day9_green_tiles_dean_filled.txt
+day9_green_tiles_dean_filled.tgz
+day9_green_tiles_dean_filled_indexed.txt
 day9_green_tiles_dean_filled_indexed.idx
 day9_green_tiles_dean_filled_indexed.corners.tmp
+day9_green_tiles_dean_filled_indexed.corners
