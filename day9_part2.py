@@ -9,6 +9,10 @@ from rich.live import Live
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
+DEFAULT_MIN_AREA_THRESHOLD = 1_190_747_376  # Max area from previous runs that was not the right answer.
+MIN_AREA_THRESHOLD = DEFAULT_MIN_AREA_THRESHOLD  # Will be set from command line
+SAMPLE_INTERVAL = 50_000  # Check every 50_000th point
+
 def parse_input(input_text):
     coords = []
     for line in input_text.splitlines():
@@ -150,8 +154,7 @@ def check_rectangle_batch(args):
         
         area = (max_rx - min_rx + 1) * (max_ry - min_ry + 1)
       
-        # Lower the cutoff to avoid wasting time on 3+ billion point rectangles
-        if area > 100_000_000: 
+        if area < MIN_AREA_THRESHOLD:
             continue
         
         # Skip if this rectangle is smaller than current max
@@ -192,7 +195,7 @@ def check_rectangle_batch(args):
         
         # Sparse sampling for huge rectangles (check every Nth point first)
         if total_points > 50_000_000:  # 50M+ points
-            sample_step = max(2, int((total_points ** 0.5) / 100))  # Adaptive sampling
+            sample_step = max(2, int((total_points ** 0.5) / 10))  # Adaptive sampling (larger steps = faster)
             progress_dict[batch_id] = {
                 'processed': processed,
                 'total': total_pairs,
@@ -231,18 +234,6 @@ def check_rectangle_batch(args):
                     'activity': 'Stopped by user'
                 }
                 return max_area, max_rect
-            
-            # Check timeout - abort rectangles taking too long
-            if time.time() - rect_start_time > rect_timeout:
-                valid = False
-                progress_dict[batch_id] = {
-                    'processed': processed,
-                    'total': total_pairs,
-                    'max_area': max_area,
-                    'name': process_name,
-                    'activity': f'⏱ Timeout: {area:,} area after {rect_timeout}s'
-                }
-                break
             
             for y in range(min_ry, max_ry + 1):
                 # Skip the corners we're using
@@ -308,18 +299,46 @@ def check_rectangle_batch(args):
         'max_area': max_area,
         'name': process_name,
         'done': True,
-        'activity': 'Completed'
+        'activity': f"Completed at {time.strftime('%m/%d/%Y %H:%M:%S')}"
     }
     return max_area, max_rect
 
 def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time=0):
     """Generate a rich table showing progress of all workers."""
+    import psutil
+    from datetime import datetime, timedelta
+    
     hours = int(elapsed_time // 3600)
     minutes = int((elapsed_time % 3600) // 60)
     seconds = int(elapsed_time % 60)
     time_str = f"\n[yellow]Running Time: {hours:02d}:{minutes:02d}:{seconds:02d}[/yellow]"
+    
+    # Calculate overall progress
+    total_processed = sum(info.get('processed', 0) for info in progress_dict.values())
+    total_work = sum(info.get('total', 0) for info in progress_dict.values())
+    overall_percent = (total_processed / total_work) * 100 if total_work > 0 else 0
+    
+    # Calculate rate
+    rate = total_processed / elapsed_time if elapsed_time > 0 else 0
+    
+    # Get memory info
+    mem = psutil.virtual_memory()
+    mem_avail_gb = mem.available / (1024**3)
+    
+    # Calculate ETA
+    remaining = total_work - total_processed
+    eta_seconds = remaining / rate if rate > 0 else 0
+    if eta_seconds > 0 and eta_seconds < 86400 * 7:  # Less than a week
+        end_time = datetime.now() + timedelta(seconds=eta_seconds)
+        eta_str = end_time.strftime("%m/%d/%Y %H:%M:%S")
+    else:
+        eta_str = "?"
+    
+    # Overall status line
+    overall_status = f"\n[bold cyan]Overall: {overall_percent:.1f}% | Processed: {total_processed:,}/{total_work:,} | Rate: {rate:,.0f} pairs/s | Free RAM: {mem_avail_gb:.1f}GB | ETA: {eta_str}[/bold cyan]"
+    
     optimizations = "\n[green]Optimizations: Per-worker edge cache | Tile cache | 4x batches | Sorted by area | Bounding box[/green]"
-    table_title = f"Rectangle Search Progress{time_str}{optimizations}" if title_info else f"Rectangle Search Progress{time_str}{optimizations}"
+    table_title = f"Rectangle Search Progress{time_str}{overall_status}{optimizations}" if title_info else f"Rectangle Search Progress{time_str}{overall_status}{optimizations}"
     table = Table(title=table_title, show_header=True, header_style="bold magenta")
     table.add_column("Worker", style="cyan", width=20)
     table.add_column("Activity", style="white", width=50)
@@ -366,7 +385,7 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
     
     return table
 
-def find_largest_rectangle(coords, num_processes=None):
+def find_largest_rectangle(coords, num_processes=None, output_file="day9_part2_progress.txt"):
     if num_processes is None:
         num_processes = min(40, cpu_count())  # Limit to 40 workers max to avoid resource exhaustion
     
@@ -381,13 +400,29 @@ def find_largest_rectangle(coords, num_processes=None):
     python_impl = sys.implementation.name
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     
+    # Get start time
+    from datetime import datetime
+    start_datetime = datetime.now()
+    start_datetime_str = start_datetime.strftime("%m/%d/%Y %H:%M:%S")
+    
     console.print(f"[bold]Command: {command_line}[/bold]")
     console.print(f"[bold magenta]Python: {python_impl} {python_version}[/bold magenta]")
+    console.print(f"[bold yellow]Started: {start_datetime_str}[/bold yellow]")
     console.print(f"[bold green]Using {num_processes} processes[/bold green]")
     console.print(f"[bold cyan]Main Process PID: {main_pid}[/bold cyan]")
     console.print(f"[bold cyan]To kill (mingw64): kill -9 {main_pid}[/bold cyan]")
     console.print(f"[bold cyan]Or (Windows): taskkill /F /PID {main_pid}[/bold cyan]")
-    console.print(f"[bold yellow]Press Ctrl-C or ESC to stop[/bold yellow]\n")
+    console.print(f"[bold yellow]Press Ctrl-C or ESC to stop[/bold yellow]")
+    console.print(f"[bold yellow]Progress log: {output_file}[/bold yellow]\n")
+    
+    # Open output file and write header
+    with open(output_file, 'w') as f:
+        f.write(f"Day 9 Part 2 - Largest Rectangle Search Progress\n")
+        f.write(f"Started: {start_datetime_str}\n")
+        f.write(f"Command: {command_line}\n")
+        f.write(f"Python: {python_impl} {python_version}\n")
+        f.write(f"Processes: {num_processes}\n")
+        f.write(f"{'='*80}\n\n")
     
     # Pre-compute polygon bounding box for early rejection
     min_x = min(x for x, y in coords)
@@ -490,6 +525,17 @@ def find_largest_rectangle(coords, num_processes=None):
                 if area > max_area:
                     max_area = area
                     max_rect = rect
+                    # Write progress to file
+                    elapsed = time.time() - start_time
+                    hours = int(elapsed // 3600)
+                    minutes = int((elapsed % 3600) // 60)
+                    seconds = int(elapsed % 60)
+                    timestamp = datetime.now().strftime("%m/%d/%Y %H:%M:%S")
+                    with open(output_file, 'a') as f:
+                        f.write(f"[{timestamp}] Elapsed: {hours:02d}:{minutes:02d}:{seconds:02d} | New max area: {max_area:,}\n")
+                        if max_rect:
+                            f.write(f"  Rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})\n")
+                        f.flush()
                 completed += 1
             
             # Stop display thread
@@ -519,6 +565,22 @@ def find_largest_rectangle(coords, num_processes=None):
         console.print("\n[bold green]✓ Rectangle search complete![/bold green]")
     if max_rect:
         console.print(f"[bold yellow]Best rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})[/bold yellow]")
+    
+    # Write final result to file
+    end_datetime = datetime.now()
+    end_datetime_str = end_datetime.strftime("%m/%d/%Y %H:%M:%S")
+    total_elapsed = time.time() - start_time
+    hours = int(total_elapsed // 3600)
+    minutes = int((total_elapsed % 3600) // 60)
+    seconds = int(total_elapsed % 60)
+    with open(output_file, 'a') as f:
+        f.write(f"\n{'='*80}\n")
+        f.write(f"Finished: {end_datetime_str}\n")
+        f.write(f"Total time: {hours:02d}:{minutes:02d}:{seconds:02d}\n")
+        f.write(f"Final max area: {max_area:,}\n")
+        if max_rect:
+            f.write(f"Final rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})\n")
+    
     return max_area
 
 # Example usage:

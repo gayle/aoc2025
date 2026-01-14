@@ -1,12 +1,12 @@
-"""Find largest rectangle using pre-computed indexed green tiles file."""
+"""Find largest rectangle using sampled validation (every 1000th point)."""
 
 # Workflow (run once):
 # 1. ./pypy day9_fill_green_tiles.py day9_input_dean.txt
 # 2. ./pypy day9_fill_green_tiles_build_index.py day9_green_tiles_dean_filled_indexed.txt
 # 3. ./pypy day9_extract_corners.py day9_green_tiles_dean_filled_indexed.txt
 
-# Then find rectangles (can rerun with different parameters):
-# ./pypy day9_find_rectangle_from_tiles.py day9_green_tiles_dean_filled_indexed.txt
+# Then find rectangles with sampled validation:
+# ./pypy day9_find_rectangle_from_tiles_sampled.py day9_green_tiles_dean_filled_indexed.txt
 
 import sys
 import os
@@ -100,19 +100,14 @@ def filter_corners_by_location(corners, bounding_box, min_area_threshold):
     min_x, max_x, min_y, max_y = bounding_box
     
     # Calculate minimum dimensions needed
-    # For a rectangle to have area >= threshold, we need width * height >= threshold
-    # So we need at least one dimension to be >= sqrt(threshold)
     min_dimension = int(min_area_threshold ** 0.5)
     
     filtered = []
     for x, y in corners:
         # Check if this corner could form a large enough rectangle
-        # Maximum possible width from this corner
         max_width = max(x - min_x, max_x - x)
-        # Maximum possible height from this corner  
         max_height = max(y - min_y, max_y - y)
         
-        # Could this corner form a rectangle >= threshold?
         max_possible_area = (max_width + 1) * (max_height + 1)
         
         if max_possible_area >= min_area_threshold:
@@ -140,9 +135,50 @@ def load_row_from_file(indexed_file, file_index, y):
         y_str, x_str = parts
         return set(map(int, x_str.split(',')))
 
-def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box):
+def check_rectangle_sampled(indexed_file, file_index, min_rx, max_rx, min_ry, max_ry, row_cache):
+    """Check rectangle validity by sampling every SAMPLE_INTERVAL points."""
+    # Calculate all points in rectangle
+    points = []
+    for y in range(min_ry, max_ry + 1):
+        for x in range(min_rx, max_rx + 1):
+            points.append((x, y))
+    
+    total_points = len(points)
+    
+    # Sample every SAMPLE_INTERVAL points
+    for i in range(0, total_points, SAMPLE_INTERVAL):
+        x, y = points[i]
+        
+        # Load row if not in cache
+        if y not in row_cache:
+            if len(row_cache) > 100:
+                row_cache.clear()
+            row_xs = load_row_from_file(indexed_file, file_index, y)
+            if row_xs is None:
+                return False
+            row_cache[y] = row_xs
+        else:
+            row_xs = row_cache[y]
+        
+        # Check if point is green
+        if x not in row_xs:
+            return False
+    
+    return True
+
+def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box, output_file=None):
     """Find largest rectangle by streaming corners from file in batches."""
-    print("Finding largest rectangle (streaming mode)...")
+    print(f"Finding rectangles using SAMPLED validation (every {SAMPLE_INTERVAL}th point)...")
+    print("⚠ WARNING: This finds CANDIDATES only - full validation needed for actual answer!\n")
+    
+    # Open output file if specified
+    outf = None
+    if output_file:
+        outf = open(output_file, 'w')
+        outf.write(f"# Rectangle Candidates (Sampled Validation - Every {SAMPLE_INTERVAL}th point)\n")
+        outf.write(f"# Format: area,min_x,min_y,max_x,max_y\n")
+        outf.flush()
+        print(f"Writing candidates to: {output_file}\n")
     
     min_x, max_x, min_y, max_y = bounding_box
     print(f"Bounding box: x=[{min_x}, {max_x}], y=[{min_y}, {max_y}]")
@@ -162,13 +198,12 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
     
     # Estimate total batches
     estimated_batches = (estimated_corners + BATCH_SIZE - 1) // BATCH_SIZE
-    estimated_pairs = (estimated_corners * (estimated_corners - 1)) // 2
-    print(f"Estimated batches: ~{estimated_batches}")
-    print(f"Estimated pairs: ~{estimated_pairs:,}")
+    print(f"Estimated batches: ~{estimated_batches}\n")
     
     max_area = 0
     max_rect = None
     checked = 0
+    candidates_found = []
     start_time = time.time()
     last_update = start_time
     
@@ -192,7 +227,6 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
         batch_i = filter_corners_by_location(batch_i_raw, bounding_box, MIN_AREA_THRESHOLD)
         
         if not batch_i:
-            # All corners filtered out, move to next batch
             pos_i = new_pos_i
             continue
         
@@ -205,8 +239,7 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
         
         # Check pairs within this batch
         batch_pairs = len(batch_i) * (len(batch_i) - 1) // 2
-        batch_checked = 0
-        batch_evaluated = 0  # Total pairs evaluated (including filtered)
+        batch_evaluated = 0
         for idx1 in range(len(batch_i)):
             corner1 = batch_i[idx1]
             x1, y1 = corner1
@@ -220,19 +253,17 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
                 if x1 == x2 or y1 == y2:
                     continue
                 
-                # Calculate area only if coordinates differ
+                # Calculate area
                 area = abs(x2 - x1 + 1) * abs(y2 - y1 + 1)
                 if area < MIN_AREA_THRESHOLD or area <= max_area:
                     continue
                 
                 checked += 1
-                batch_checked += 1
                 
-                # Progress update - show every 50K evaluations
-                if batch_evaluated % 50000 == 0:
+                # Progress update every 50K evaluations
+                if True: # batch_evaluated % 10 == 0:
                     current_time = time.time()
                     elapsed = current_time - start_time
-                    eval_rate = batch_evaluated / (elapsed - (last_update - 1.0)) if elapsed > 0 else 0
                     batch_percent = (batch_evaluated / batch_pairs) * 100 if batch_pairs > 0 else 0
                     
                     mem = psutil.virtual_memory()
@@ -245,39 +276,24 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
                         sys.exit(1)
                     
                     print(f"Batch {batch_num} (within) {batch_percent:.1f}% | Eval: {batch_evaluated:,}/{batch_pairs:,} | "
-                          f"Passed: {batch_checked:,} | Best: {max_area:,} | RAM: {mem_avail_gb:.1f}GB", 
+                          f"Candidates: {len(candidates_found)} | RAM: {mem_avail_gb:.1f}GB", 
                           end='\r', flush=True)
                     last_update = current_time
                 
-                # Check rectangle validity
+                # Check rectangle validity (SAMPLED)
                 min_rx, max_rx = min(x1, x2), max(x1, x2)
                 min_ry, max_ry = min(y1, y2), max(y1, y2)
                 
-                valid = True
-                for y in range(min_ry, max_ry + 1):
-                    if y not in row_cache:
-                        if len(row_cache) > 100:
-                            row_cache.clear()
-                        row_xs = load_row_from_file(indexed_file, file_index, y)
-                        if row_xs is None:
-                            valid = False
-                            break
-                        row_cache[y] = row_xs
-                    else:
-                        row_xs = row_cache[y]
-                    
-                    for x in range(min_rx, max_rx + 1):
-                        if x not in row_xs:
-                            valid = False
-                            break
-                    
-                    if not valid:
-                        break
+                valid = check_rectangle_sampled(indexed_file, file_index, min_rx, max_rx, min_ry, max_ry, row_cache)
                 
                 if valid:
                     max_area = area
                     max_rect = (min_rx, min_ry, max_rx, max_ry)
-                    print(f"\n✓ New best: {max_area:,} at ({min_rx},{min_ry})-({max_rx},{max_ry})")
+                    candidates_found.append((area, max_rect))
+                    print(f"\n✓ Candidate: {area:,} at ({min_rx},{min_ry})-({max_rx},{max_ry})")
+                    if outf:
+                        outf.write(f"{area},{min_rx},{min_ry},{max_rx},{max_ry}\n")
+                        outf.flush()
         
         # Check pairs between batch i and all subsequent batches
         pos_j = new_pos_i
@@ -296,22 +312,19 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
             batch_j = filter_corners_by_location(batch_j_raw, bounding_box, MIN_AREA_THRESHOLD)
             
             if not batch_j:
-                # All corners filtered out, move to next batch
                 pos_j = new_pos_j
                 continue
             
             batch_j_num += 1
             cross_batches_processed += 1
             cross_pairs = len(batch_i) * len(batch_j)
-            cross_checked = 0
-            cross_evaluated = 0  # Total pairs evaluated in this cross-batch
+            cross_evaluated = 0
             
             # Show which subsequent batch we're checking
             cross_elapsed = time.time() - cross_batch_start_time
             cross_rate = cross_batches_processed / cross_elapsed if cross_elapsed > 0 else 0
             cross_eta_str = "?"
             if cross_rate > 0 and estimated_corners > 0:
-                # Estimate total batches from file size
                 remaining_batches = max(0, (estimated_corners // BATCH_SIZE) - batch_j_num)
                 cross_eta_sec = remaining_batches / cross_rate
                 cross_eta_str = str(timedelta(seconds=int(cross_eta_sec)))
@@ -328,19 +341,18 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
                     
                     cross_evaluated += 1
                     
-                    # Quick filters - avoid same x or y coordinates
+                    # Quick filters
                     if x1 == x2 or y1 == y2:
                         continue
                     
-                    # Calculate area and check thresholds
+                    # Calculate area
                     area = abs(x2 - x1 + 1) * abs(y2 - y1 + 1)
                     if area < MIN_AREA_THRESHOLD or area <= max_area:
                         continue
                     
                     checked += 1
-                    cross_checked += 1
                     
-                    # Progress update - show every 50K evaluations
+                    # Progress update every 50K evaluations
                     if cross_evaluated % 50000 == 0:
                         current_time = time.time()
                         elapsed = current_time - start_time
@@ -355,41 +367,25 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
                             print("Terminating to prevent system instability...")
                             sys.exit(1)
                         
-                        # Show progress within this cross-batch pair
                         print(f"Batch {batch_num}×{batch_j_num} {cross_percent:.1f}% | Eval: {cross_evaluated:,}/{cross_pairs:,} | "
-                              f"Passed: {cross_checked:,} | Best: {max_area:,} | RAM: {mem_avail_gb:.1f}GB", 
+                              f"Candidates: {len(candidates_found)} | RAM: {mem_avail_gb:.1f}GB", 
                               end='\r', flush=True)
                         last_update = current_time
                     
-                    # Check rectangle validity
+                    # Check rectangle validity (SAMPLED)
                     min_rx, max_rx = min(x1, x2), max(x1, x2)
                     min_ry, max_ry = min(y1, y2), max(y1, y2)
                     
-                    valid = True
-                    for y in range(min_ry, max_ry + 1):
-                        if y not in row_cache:
-                            if len(row_cache) > 100:
-                                row_cache.clear()
-                            row_xs = load_row_from_file(indexed_file, file_index, y)
-                            if row_xs is None:
-                                valid = False
-                                break
-                            row_cache[y] = row_xs
-                        else:
-                            row_xs = row_cache[y]
-                        
-                        for x in range(min_rx, max_rx + 1):
-                            if x not in row_xs:
-                                valid = False
-                                break
-                        
-                        if not valid:
-                            break
+                    valid = check_rectangle_sampled(indexed_file, file_index, min_rx, max_rx, min_ry, max_ry, row_cache)
                     
                     if valid:
                         max_area = area
                         max_rect = (min_rx, min_ry, max_rx, max_ry)
-                        print(f"\n✓ New best: {max_area:,} at ({min_rx},{min_ry})-({max_rx},{max_ry})")
+                        candidates_found.append((area, max_rect))
+                        print(f"\n✓ Candidate: {area:,} at ({min_rx},{min_ry})-({max_rx},{max_ry})")
+                        if outf:
+                            outf.write(f"{area},{min_rx},{min_ry},{max_rx},{max_ry}\n")
+                            outf.flush()
             
             pos_j = new_pos_j
         
@@ -401,7 +397,6 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
         elapsed = current_time - start_time
         rate = checked / elapsed if elapsed > 0 else 0
         
-        # Calculate progress and ETA
         percent = (batch_num / estimated_batches) * 100 if estimated_batches > 0 else 0
         eta_seconds = ((estimated_batches - batch_num) / batch_num) * elapsed if batch_num > 0 else 0
         end_time = datetime.now() + timedelta(seconds=eta_seconds)
@@ -411,23 +406,27 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
         mem_avail_gb = mem.available / (1024**3)
         mem_avail_mb = mem.available / (1024**2)
         
-        # Check memory
         if mem_avail_mb < 200:
             print(f"\n⚠ Low memory warning: {mem_avail_mb:.0f}MB free (< 200MB)")
             print("Terminating to prevent system instability...")
             sys.exit(1)
         
         print(f"{percent:.1f}% | Batch {batch_num}/{estimated_batches} | Checked: {checked:,} | "
-              f"Best: {max_area:,} | Rate: {rate:,.0f} pairs/s | "
+              f"Candidates: {len(candidates_found)} | Rate: {rate:,.0f} pairs/s | "
               f"Free RAM: {mem_avail_gb:.1f}GB | ETA: {end_time_str}")
         last_update = current_time
     
     elapsed = time.time() - start_time
     print(f"\n✓ Search complete in {elapsed:.1f}s")
     print(f"  Checked {checked:,} pairs")
-    print(f"  Rate: {checked/elapsed:,.0f} pairs/second")
+    print(f"  Found {len(candidates_found)} candidates")
     
-    return max_area, max_rect
+    # Close output file
+    if outf:
+        outf.close()
+        print(f"  Candidates written to: {output_file}")
+    
+    return candidates_found
 
 if __name__ == "__main__":
     # Print execution info
@@ -446,7 +445,6 @@ if __name__ == "__main__":
             indexed_file = "day9_green_tiles_dean_filled_indexed.txt"
         else:
             print("Error: No indexed tiles file found.")
-            print("Run day9_fill_green_tiles.py first to generate the indexed file.")
             sys.exit(1)
     
     # Parse optional minimum area threshold
@@ -461,11 +459,11 @@ if __name__ == "__main__":
     
     if not os.path.exists(indexed_file):
         print(f"Error: File '{indexed_file}' not found.")
-        print("Run day9_fill_green_tiles.py first to generate the indexed file.")
         sys.exit(1)
     
     print(f"Using indexed tiles file: {indexed_file}")
-    print(f"Minimum area threshold: {MIN_AREA_THRESHOLD:,}\n")
+    print(f"Minimum area threshold: {MIN_AREA_THRESHOLD:,}")
+    print(f"Sample interval: Every {SAMPLE_INTERVAL}th point\n")
     
     # Load pre-built file index
     file_index = load_file_index(indexed_file)
@@ -476,14 +474,36 @@ if __name__ == "__main__":
     print(f"Corners file: {corners_file}")
     print(f"Bounding box: x=[{bounding_box[0]}, {bounding_box[1]}], y=[{bounding_box[2]}, {bounding_box[3]}]\n")
     
-    # Find largest rectangle (streams corners from file in batches)
-    max_area, max_rect = find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
+    # Generate output filename
+    base_name = indexed_file.rsplit('.', 1)[0]
+    output_file = f"{base_name}_candidates.txt"
     
-    if max_rect:
+    # Find candidates using sampled validation
+    candidates = find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box, output_file)
+    
+    if candidates:
         print(f"\n{'='*60}")
-        print(f"RESULT: {max_area:,}")
-        print(f"Rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})")
+        print(f"FOUND {len(candidates)} CANDIDATE RECTANGLES:")
         print(f"{'='*60}")
+        
+        # Sort by area (descending)
+        candidates.sort(reverse=True)
+        
+        for area, rect in candidates:
+            print(f"  Area: {area:,} | Rectangle: ({rect[0]},{rect[1]}) to ({rect[2]},{rect[3]})")
+        
+        print(f"\n{'='*60}")
+        print(f"LARGEST CANDIDATE: {candidates[0][0]:,}")
+        print(f"Rectangle: ({candidates[0][1][0]},{candidates[0][1][1]}) to ({candidates[0][1][2]},{candidates[0][1][3]})")
+        print(f"{'='*60}")
+        print(f"\n⚠ IMPORTANT: These are CANDIDATES only!")
+        print(f"Run full validation to confirm actual answer.")
+        
+        # Write summary to file
+        with open(output_file, 'a') as f:
+            f.write(f"\n# SUMMARY: Found {len(candidates)} candidates\n")
+            f.write(f"# Largest: {candidates[0][0]}\n")
+        
         common.multibeep()
     else:
-        print("\nNo valid rectangle found.")
+        print("\nNo candidates found.")
