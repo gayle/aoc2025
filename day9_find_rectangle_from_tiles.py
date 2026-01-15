@@ -208,15 +208,45 @@ def validate_rectangle_with_sampling(indexed_file, file_index, min_rx, max_rx, m
             
             attempts += 1
     
-    # Phase 2: Exhaustive check (only reached if sampling passed)
+    # Phase 2: Vectorized range check (check if each row contains contiguous range)
     for y in range(min_ry, max_ry + 1):
         row_xs = load_row_from_file_cached(indexed_file, file_index, y)
         if row_xs is None:
             return False
         
-        for x in range(min_rx, max_rx + 1):
-            if x not in row_xs:
-                return False
+        # Convert to sorted list for vectorized range check
+        row_list = sorted(row_xs)
+        
+        # Binary search for min_rx
+        left, right = 0, len(row_list) - 1
+        start_idx = -1
+        
+        while left <= right:
+            mid = (left + right) // 2
+            if row_list[mid] == min_rx:
+                start_idx = mid
+                break
+            elif row_list[mid] < min_rx:
+                left = mid + 1
+            else:
+                right = mid - 1
+        
+        # If min_rx not found or range doesn't match, invalid
+        if start_idx == -1:
+            return False
+        
+        # Check if we have a contiguous range from min_rx to max_rx
+        expected_range = list(range(min_rx, max_rx + 1))
+        expected_len = len(expected_range)
+        
+        # Check if we have enough elements
+        if start_idx + expected_len > len(row_list):
+            return False
+        
+        # Compare slices - this is much faster than point-by-point
+        actual_slice = row_list[start_idx:start_idx + expected_len]
+        if actual_slice != expected_range:
+            return False
     
     return True
 

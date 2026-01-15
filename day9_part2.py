@@ -121,11 +121,52 @@ def validate_rectangle_with_sampling(min_rx, max_rx, min_ry, max_ry, coords, coo
             
             attempts += 1
     
-    # Phase 2: Exhaustive check (only reached if sampling passed)
-    for x in range(min_rx, max_rx + 1):
-        for y in range(min_ry, max_ry + 1):
-            if (x, y) not in coord_set and not is_green_tile(x, y, coords, edge_set, tile_cache):
-                return False
+    # Phase 2: Vectorized row-wise check - build and validate rows
+    # Check rows more efficiently by building contiguous ranges
+    for y in range(min_ry, max_ry + 1):
+        # Build set of all green x coordinates in this row within our rectangle bounds
+        row_xs = set()
+        for x in range(min_rx, max_rx + 1):
+            if (x, y) in coord_set or is_green_tile(x, y, coords, edge_set, tile_cache):
+                row_xs.add(x)
+        
+        # Convert to sorted list for vectorized range check
+        row_list = sorted(row_xs)
+        
+        # Check if we have a contiguous range from min_rx to max_rx
+        expected_len = width
+        
+        # Quick check: if we don't have enough elements, it's invalid
+        if len(row_list) < expected_len:
+            return False
+        
+        # Binary search for min_rx
+        left, right = 0, len(row_list) - 1
+        start_idx = -1
+        
+        while left <= right:
+            mid = (left + right) // 2
+            if row_list[mid] == min_rx:
+                start_idx = mid
+                break
+            elif row_list[mid] < min_rx:
+                left = mid + 1
+            else:
+                right = mid - 1
+        
+        # If min_rx not found, invalid
+        if start_idx == -1:
+            return False
+        
+        # Check if we have enough elements after start_idx
+        if start_idx + expected_len > len(row_list):
+            return False
+        
+        # Compare slices - vectorized comparison is much faster
+        expected_range = list(range(min_rx, max_rx + 1))
+        actual_slice = row_list[start_idx:start_idx + expected_len]
+        if actual_slice != expected_range:
+            return False
     
     return True
 
