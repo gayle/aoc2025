@@ -13,7 +13,9 @@ import os
 import time
 import common
 import psutil
+import random
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 # Enable unicode output on Windows
 if sys.platform == 'win32':
@@ -22,6 +24,11 @@ if sys.platform == 'win32':
 DEFAULT_MIN_AREA_THRESHOLD = 1_190_747_376  # Max area from previous runs that was not the right answer.
 MIN_AREA_THRESHOLD = DEFAULT_MIN_AREA_THRESHOLD  # Will be set from command line
 SAMPLE_INTERVAL = 50_000  # Check every 50_000th point
+
+# Random sampling parameters for fast rejection
+SAMPLE_SIZE_SMALL = 100   # For rectangles < 100K points
+SAMPLE_SIZE_MEDIUM = 500  # For rectangles 100K-10M points
+SAMPLE_SIZE_LARGE = 2000  # For rectangles > 10M points
 
 def load_file_index(indexed_file):
     """Load pre-built index mapping y -> file offset from .idx file."""
@@ -120,8 +127,23 @@ def filter_corners_by_location(corners, bounding_box, min_area_threshold):
     
     return filtered
 
-def load_row_from_file(indexed_file, file_index, y):
-    """Load a single row from file using the index."""
+# Global cache for row data - using LRU cache for automatic management
+_row_cache = {}
+_cache_hits = 0
+_cache_misses = 0
+
+def load_row_from_file_cached(indexed_file, file_index, y):
+    """Load a single row from file using the index with LRU caching."""
+    global _row_cache, _cache_hits, _cache_misses
+    
+    # Check cache first
+    if y in _row_cache:
+        _cache_hits += 1
+        return _row_cache[y]
+    
+    _cache_misses += 1
+    
+    # Load from file
     if y not in file_index:
         return None
     
@@ -138,11 +160,70 @@ def load_row_from_file(indexed_file, file_index, y):
             return None
             
         y_str, x_str = parts
-        return set(map(int, x_str.split(',')))
+        row_data = set(map(int, x_str.split(',')))
+    
+    # Add to cache (limit size to 10,000 rows to avoid memory issues)
+    if len(_row_cache) >= 10000:
+        # Remove oldest 20% of entries (simple FIFO-ish behavior)
+        keys_to_remove = list(_row_cache.keys())[:2000]
+        for k in keys_to_remove:
+            del _row_cache[k]
+    
+    _row_cache[y] = row_data
+    return row_data
+
+def validate_rectangle_with_sampling(indexed_file, file_index, min_rx, max_rx, min_ry, max_ry):
+    """
+    Validate rectangle with random sampling first for fast rejection.
+    Returns True if valid, False otherwise.
+    """
+    width = max_rx - min_rx + 1
+    height = max_ry - min_ry + 1
+    total_points = width * height
+    
+    # Determine sample size based on rectangle size
+    if total_points < 100000:
+        sample_size = min(SAMPLE_SIZE_SMALL, total_points // 2)
+    elif total_points < 10_000_000:
+        sample_size = min(SAMPLE_SIZE_MEDIUM, total_points // 100)
+    else:
+        sample_size = min(SAMPLE_SIZE_LARGE, total_points // 1000)
+    
+    # Phase 1: Random sampling for fast rejection
+    if sample_size > 10:  # Only sample if it's worth the overhead
+        sampled_points = set()
+        attempts = 0
+        max_attempts = sample_size * 3  # Avoid infinite loop
+        
+        while len(sampled_points) < sample_size and attempts < max_attempts:
+            x = random.randint(min_rx, max_rx)
+            y = random.randint(min_ry, max_ry)
+            if (x, y) not in sampled_points:
+                sampled_points.add((x, y))
+                
+                # Check if this point is green
+                row_xs = load_row_from_file_cached(indexed_file, file_index, y)
+                if row_xs is None or x not in row_xs:
+                    return False  # Fast rejection!
+            
+            attempts += 1
+    
+    # Phase 2: Exhaustive check (only reached if sampling passed)
+    for y in range(min_ry, max_ry + 1):
+        row_xs = load_row_from_file_cached(indexed_file, file_index, y)
+        if row_xs is None:
+            return False
+        
+        for x in range(min_rx, max_rx + 1):
+            if x not in row_xs:
+                return False
+    
+    return True
 
 def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box):
     """Find largest rectangle by streaming corners from file in batches."""
-    print("Finding largest rectangle (streaming mode)...")
+    print("Finding largest rectangle (streaming mode with optimizations)...")
+    print("Optimizations: Random sampling for fast rejection + LRU row caching (10K rows)")
     
     min_x, max_x, min_y, max_y = bounding_box
     print(f"Bounding box: x=[{min_x}, {max_x}], y=[{min_y}, {max_y}]")
@@ -169,13 +250,11 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
     max_area = 0
     max_rect = None
     checked = 0
+    rejected_by_sampling = 0
     start_time = time.time()
     last_update = start_time
     
     batch_num = 0
-    
-    # Cache for recently used rows
-    row_cache = {}
     
     # First batch position (after metadata)
     pos_i = data_start
@@ -201,12 +280,15 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
         # Display batch start info
         mem = psutil.virtual_memory()
         mem_avail_gb = mem.available / (1024**3)
-        print(f"\nBatch {batch_num}/{estimated_batches}: {len(batch_i):,} corners (filtered from {len(batch_i_raw):,}) | Free RAM: {mem_avail_gb:.1f}GB")
+        cache_hit_rate = (_cache_hits / (_cache_hits + _cache_misses) * 100) if (_cache_hits + _cache_misses) > 0 else 0
+        print(f"\nBatch {batch_num}/{estimated_batches}: {len(batch_i):,} corners (filtered from {len(batch_i_raw):,}) | "
+              f"Free RAM: {mem_avail_gb:.1f}GB | Cache hit rate: {cache_hit_rate:.1f}%")
         
         # Check pairs within this batch
         batch_pairs = len(batch_i) * (len(batch_i) - 1) // 2
         batch_checked = 0
         batch_evaluated = 0  # Total pairs evaluated (including filtered)
+        batch_rejected = 0
         for idx1 in range(len(batch_i)):
             corner1 = batch_i[idx1]
             x1, y1 = corner1
@@ -232,7 +314,6 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
                 if batch_evaluated % 50000 == 0:
                     current_time = time.time()
                     elapsed = current_time - start_time
-                    eval_rate = batch_evaluated / (elapsed - (last_update - 1.0)) if elapsed > 0 else 0
                     batch_percent = (batch_evaluated / batch_pairs) * 100 if batch_pairs > 0 else 0
                     
                     mem = psutil.virtual_memory()
@@ -244,35 +325,21 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
                         print("Terminating to prevent system instability...")
                         sys.exit(1)
                     
+                    rejection_rate = (batch_rejected / batch_checked * 100) if batch_checked > 0 else 0
                     print(f"Batch {batch_num} (within) {batch_percent:.1f}% | Eval: {batch_evaluated:,}/{batch_pairs:,} | "
-                          f"Passed: {batch_checked:,} | Best: {max_area:,} | RAM: {mem_avail_gb:.1f}GB", 
+                          f"Passed: {batch_checked:,} | Rejected: {batch_rejected} ({rejection_rate:.1f}%) | Best: {max_area:,} | RAM: {mem_avail_gb:.1f}GB", 
                           end='\r', flush=True)
                     last_update = current_time
                 
-                # Check rectangle validity
+                # Check rectangle validity with random sampling
                 min_rx, max_rx = min(x1, x2), max(x1, x2)
                 min_ry, max_ry = min(y1, y2), max(y1, y2)
                 
-                valid = True
-                for y in range(min_ry, max_ry + 1):
-                    if y not in row_cache:
-                        if len(row_cache) > 100:
-                            row_cache.clear()
-                        row_xs = load_row_from_file(indexed_file, file_index, y)
-                        if row_xs is None:
-                            valid = False
-                            break
-                        row_cache[y] = row_xs
-                    else:
-                        row_xs = row_cache[y]
-                    
-                    for x in range(min_rx, max_rx + 1):
-                        if x not in row_xs:
-                            valid = False
-                            break
-                    
-                    if not valid:
-                        break
+                valid = validate_rectangle_with_sampling(indexed_file, file_index, min_rx, max_rx, min_ry, max_ry)
+                
+                if not valid:
+                    batch_rejected += 1
+                    rejected_by_sampling += 1
                 
                 if valid:
                     max_area = area
@@ -305,6 +372,7 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
             cross_pairs = len(batch_i) * len(batch_j)
             cross_checked = 0
             cross_evaluated = 0  # Total pairs evaluated in this cross-batch
+            cross_rejected = 0
             
             # Show which subsequent batch we're checking
             cross_elapsed = time.time() - cross_batch_start_time
@@ -355,36 +423,22 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
                             print("Terminating to prevent system instability...")
                             sys.exit(1)
                         
+                        rejection_rate = (cross_rejected / cross_checked * 100) if cross_checked > 0 else 0
                         # Show progress within this cross-batch pair
                         print(f"Batch {batch_num}×{batch_j_num} {cross_percent:.1f}% | Eval: {cross_evaluated:,}/{cross_pairs:,} | "
-                              f"Passed: {cross_checked:,} | Best: {max_area:,} | RAM: {mem_avail_gb:.1f}GB", 
+                              f"Passed: {cross_checked:,} | Rejected: {cross_rejected} ({rejection_rate:.1f}%) | Best: {max_area:,} | RAM: {mem_avail_gb:.1f}GB", 
                               end='\r', flush=True)
                         last_update = current_time
                     
-                    # Check rectangle validity
+                    # Check rectangle validity with random sampling
                     min_rx, max_rx = min(x1, x2), max(x1, x2)
                     min_ry, max_ry = min(y1, y2), max(y1, y2)
                     
-                    valid = True
-                    for y in range(min_ry, max_ry + 1):
-                        if y not in row_cache:
-                            if len(row_cache) > 100:
-                                row_cache.clear()
-                            row_xs = load_row_from_file(indexed_file, file_index, y)
-                            if row_xs is None:
-                                valid = False
-                                break
-                            row_cache[y] = row_xs
-                        else:
-                            row_xs = row_cache[y]
-                        
-                        for x in range(min_rx, max_rx + 1):
-                            if x not in row_xs:
-                                valid = False
-                                break
-                        
-                        if not valid:
-                            break
+                    valid = validate_rectangle_with_sampling(indexed_file, file_index, min_rx, max_rx, min_ry, max_ry)
+                    
+                    if not valid:
+                        cross_rejected += 1
+                        rejected_by_sampling += 1
                     
                     if valid:
                         max_area = area
@@ -417,15 +471,20 @@ def find_largest_rectangle(indexed_file, file_index, corners_file, bounding_box)
             print("Terminating to prevent system instability...")
             sys.exit(1)
         
-        print(f"{percent:.1f}% | Batch {batch_num}/{estimated_batches} | Checked: {checked:,} | "
-              f"Best: {max_area:,} | Rate: {rate:,.0f} pairs/s | "
+        cache_hit_rate = (_cache_hits / (_cache_hits + _cache_misses) * 100) if (_cache_hits + _cache_misses) > 0 else 0
+        rejection_rate = (rejected_by_sampling / checked * 100) if checked > 0 else 0
+        print(f"{percent:.1f}% | Batch {batch_num}/{estimated_batches} | Checked: {checked:,} | Rejected: {rejected_by_sampling:,} ({rejection_rate:.1f}%) | "
+              f"Best: {max_area:,} | Rate: {rate:,.0f} pairs/s | Cache: {cache_hit_rate:.1f}% | "
               f"Free RAM: {mem_avail_gb:.1f}GB | ETA: {end_time_str}")
         last_update = current_time
     
     elapsed = time.time() - start_time
     print(f"\n✓ Search complete in {elapsed:.1f}s")
     print(f"  Checked {checked:,} pairs")
+    print(f"  Rejected by sampling: {rejected_by_sampling:,}")
     print(f"  Rate: {checked/elapsed:,.0f} pairs/second")
+    cache_hit_rate = (_cache_hits / (_cache_hits + _cache_misses) * 100) if (_cache_hits + _cache_misses) > 0 else 0
+    print(f"  Cache statistics: {_cache_hits:,} hits, {_cache_misses:,} misses ({cache_hit_rate:.1f}% hit rate)")
     
     return max_area, max_rect
 

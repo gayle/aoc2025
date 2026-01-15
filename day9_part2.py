@@ -4,6 +4,7 @@ import time
 import threading
 import signal
 import sys
+import random
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
@@ -12,6 +13,11 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 DEFAULT_MIN_AREA_THRESHOLD = 1_190_747_376  # Max area from previous runs that was not the right answer.
 MIN_AREA_THRESHOLD = DEFAULT_MIN_AREA_THRESHOLD  # Will be set from command line
 SAMPLE_INTERVAL = 50_000  # Check every 50_000th point
+
+# Random sampling parameters for fast rejection
+SAMPLE_SIZE_SMALL = 100   # For rectangles < 100K points
+SAMPLE_SIZE_MEDIUM = 500  # For rectangles 100K-10M points
+SAMPLE_SIZE_LARGE = 2000  # For rectangles > 10M points
 
 def parse_input(input_text):
     coords = []
@@ -80,6 +86,49 @@ def is_green_tile(x, y, coords, edge_set=None, cache=None):
     
     return result
 
+def validate_rectangle_with_sampling(min_rx, max_rx, min_ry, max_ry, coords, coord_set, edge_set, tile_cache):
+    """
+    Validate rectangle with random sampling first for fast rejection.
+    Returns True if valid, False otherwise.
+    """
+    width = max_rx - min_rx + 1
+    height = max_ry - min_ry + 1
+    total_points = width * height
+    
+    # Determine sample size based on rectangle size
+    if total_points < 100000:
+        sample_size = min(SAMPLE_SIZE_SMALL, total_points // 2)
+    elif total_points < 10_000_000:
+        sample_size = min(SAMPLE_SIZE_MEDIUM, total_points // 100)
+    else:
+        sample_size = min(SAMPLE_SIZE_LARGE, total_points // 1000)
+    
+    # Phase 1: Random sampling for fast rejection
+    if sample_size > 10:  # Only sample if it's worth the overhead
+        sampled_points = set()
+        attempts = 0
+        max_attempts = sample_size * 3  # Avoid infinite loop
+        
+        while len(sampled_points) < sample_size and attempts < max_attempts:
+            x = random.randint(min_rx, max_rx)
+            y = random.randint(min_ry, max_ry)
+            if (x, y) not in sampled_points:
+                sampled_points.add((x, y))
+                
+                # Check if this point is green
+                if (x, y) not in coord_set and not is_green_tile(x, y, coords, edge_set, tile_cache):
+                    return False  # Fast rejection!
+            
+            attempts += 1
+    
+    # Phase 2: Exhaustive check (only reached if sampling passed)
+    for x in range(min_rx, max_rx + 1):
+        for y in range(min_ry, max_ry + 1):
+            if (x, y) not in coord_set and not is_green_tile(x, y, coords, edge_set, tile_cache):
+                return False
+    
+    return True
+
 def check_rectangle_batch(args):
     """Check a batch of rectangle pairs."""
     pairs, coords, coord_set, bbox, progress_dict, batch_id, stop_flag = args
@@ -90,10 +139,13 @@ def check_rectangle_batch(args):
     # Compute edge set locally to avoid copying large data on Windows
     edge_set = compute_edge_set(coords)
     
-    # Create local cache for this worker - use size-limited cache to avoid memory issues
-    # For very large rectangles, we'll disable caching to prevent OOM
+    # Create local cache for this worker - increased to 10M limit (vs original 10M)
     tile_cache = {}
     CACHE_SIZE_LIMIT = 10_000_000  # Max 10M cached points (~160MB with 16 bytes per entry)
+    
+    # Statistics
+    rejected_by_sampling = 0
+    exhaustive_checks = 0
     
     # Progress tracking for this worker
     import os
@@ -109,7 +161,8 @@ def check_rectangle_batch(args):
         'total': total_pairs,
         'max_area': 0,
         'name': process_name,
-        'activity': 'Starting...'
+        'activity': 'Starting...',
+        'rejected_by_sampling': 0
     }
     
     for i, j in pairs:
@@ -121,7 +174,8 @@ def check_rectangle_batch(args):
                 'max_area': max_area,
                 'name': process_name,
                 'stopped': True,
-                'activity': 'Stopped by user'
+                'activity': 'Stopped by user',
+                'rejected_by_sampling': rejected_by_sampling
             }
             return max_area, max_rect
         
@@ -135,7 +189,8 @@ def check_rectangle_batch(args):
                 'total': total_pairs,
                 'max_area': max_area,
                 'name': process_name,
-                'activity': 'Checking pairs'
+                'activity': 'Checking pairs',
+                'rejected_by_sampling': rejected_by_sampling
             }
             last_update_time = current_time
         x1, y1 = coords[i]
@@ -167,7 +222,8 @@ def check_rectangle_batch(args):
             'total': total_pairs,
             'max_area': max_area,
             'name': process_name,
-            'activity': f'Checking corners: {area:,} area'
+            'activity': f'Checking corners: {area:,} area',
+            'rejected_by_sampling': rejected_by_sampling
         }
         
         # Batch check both corners (fast rejection)
@@ -181,90 +237,32 @@ def check_rectangle_batch(args):
         if not valid_corners:
             continue
         
-        # Check all points in rectangle
+        # Check rectangle with sampling optimization
         total_points = (max_rx - min_rx + 1) * (max_ry - min_ry + 1)
-        points_checked = 0
-        valid = True
-        rect_start_time = time.time()  # Track how long this rectangle takes
-        rect_timeout = 300  # 5 minutes max per rectangle
+        rect_start_time = time.time()
         
-        # For very large rectangles, disable caching and do sparse sampling first
+        # Update activity
+        progress_dict[batch_id] = {
+            'processed': processed,
+            'total': total_pairs,
+            'max_area': max_area,
+            'name': process_name,
+            'activity': f'Validating: {area:,} area ({total_points:,} points)',
+            'rejected_by_sampling': rejected_by_sampling
+        }
+        
+        # For very large rectangles, manage cache size
         use_cache = total_points < 10_000_000  # Only cache for rectangles < 10M points
         if not use_cache and len(tile_cache) > 0:
             tile_cache.clear()  # Free memory from previous cached rectangle
         
-        # Sparse sampling for huge rectangles (check every Nth point first)
-        if total_points > 50_000_000:  # 50M+ points
-            sample_step = max(2, int((total_points ** 0.5) / 10))  # Adaptive sampling (larger steps = faster)
-            progress_dict[batch_id] = {
-                'processed': processed,
-                'total': total_pairs,
-                'max_area': max_area,
-                'name': process_name,
-                'activity': f'Sampling: {area:,} area (step={sample_step})'
-            }
-            for x in range(min_rx, max_rx + 1, sample_step):
-                for y in range(min_ry, max_ry + 1, sample_step):
-                    if (x, y) == (x1, y1) or (x, y) == (x2, y2):
-                        continue
-                    if (x, y) not in coord_set and not is_green_tile(x, y, coords, edge_set, None):
-                        valid = False
-                        break
-                if not valid:
-                    break
-            if not valid:
-                progress_dict[batch_id] = {
-                    'processed': processed,
-                    'total': total_pairs,
-                    'max_area': max_area,
-                    'name': process_name,
-                    'activity': f'❌ Failed sampling: {area:,} area'
-                }
-                continue  # Skip exhaustive check
+        cache_to_use = tile_cache if use_cache else None
+        valid = validate_rectangle_with_sampling(min_rx, max_rx, min_ry, max_ry, coords, coord_set, edge_set, cache_to_use)
         
-        for x in range(min_rx, max_rx + 1):
-            # Check stop flag at the start of each row
-            if stop_flag.value == 1:
-                progress_dict[batch_id] = {
-                    'processed': processed,
-                    'total': total_pairs,
-                    'max_area': max_area,
-                    'name': process_name,
-                    'stopped': True,
-                    'activity': 'Stopped by user'
-                }
-                return max_area, max_rect
-            
-            for y in range(min_ry, max_ry + 1):
-                # Skip the corners we're using
-                if (x, y) == (x1, y1) or (x, y) == (x2, y2):
-                    continue
-                
-                points_checked += 1
-                
-                # Update progress for large rectangles (every 100 points or every 0.5s)
-                if total_points > 1000:
-                    current_time = time.time()
-                    if points_checked % 100 == 0 or current_time - last_update_time >= 0.5:
-                        rect_progress = (points_checked / total_points) * 100
-                        rect_elapsed = current_time - rect_start_time
-                        progress_dict[batch_id] = {
-                            'processed': processed,
-                            'total': total_pairs,
-                            'max_area': max_area,
-                            'name': process_name,
-                            'checking_rect': f"{area:,} area, {rect_progress:.0f}% checked, {rect_elapsed:.1f}s",
-                            'activity': f'Validating: ({min_rx},{min_ry})-({max_rx},{max_ry})'
-                        }
-                        last_update_time = current_time
-                
-                # Use cache only for smaller rectangles to avoid OOM
-                cache_to_use = tile_cache if use_cache else None
-                if (x, y) not in coord_set and not is_green_tile(x, y, coords, edge_set, cache_to_use):
-                    valid = False
-                    break
-            if not valid:
-                break
+        if not valid:
+            rejected_by_sampling += 1
+        else:
+            exhaustive_checks += 1
         
         # Prevent cache from growing unbounded - clear if it exceeds limit
         if use_cache and len(tile_cache) > CACHE_SIZE_LIMIT:
@@ -274,7 +272,8 @@ def check_rectangle_batch(args):
                 'total': total_pairs,
                 'max_area': max_area,
                 'name': process_name,
-                'activity': f'🧹 Cleared cache ({CACHE_SIZE_LIMIT:,} limit)'
+                'activity': f'🧹 Cleared cache ({CACHE_SIZE_LIMIT:,} limit)',
+                'rejected_by_sampling': rejected_by_sampling
             }
         
         if valid:
@@ -282,15 +281,15 @@ def check_rectangle_batch(args):
             if area > max_area:
                 max_area = area
                 max_rect = (min_rx, min_ry, max_rx, max_ry)
-                # Log when we find a new best (only for large rectangles)
-                if total_points > 1000:
-                    progress_dict[batch_id] = {
-                        'processed': processed,
-                        'total': total_pairs,
-                        'max_area': max_area,
-                        'name': process_name,
-                        'activity': f'✓ New best! {area:,} in {rect_elapsed:.1f}s'
-                    }
+                # Log when we find a new best
+                progress_dict[batch_id] = {
+                    'processed': processed,
+                    'total': total_pairs,
+                    'max_area': max_area,
+                    'name': process_name,
+                    'activity': f'✓ New best! {area:,} in {rect_elapsed:.1f}s',
+                    'rejected_by_sampling': rejected_by_sampling
+                }
     
     # Final progress update
     progress_dict[batch_id] = {
@@ -299,7 +298,9 @@ def check_rectangle_batch(args):
         'max_area': max_area,
         'name': process_name,
         'done': True,
-        'activity': f"Completed at {time.strftime('%m/%d/%Y %H:%M:%S')}"
+        'activity': f"Completed at {time.strftime('%m/%d/%Y %H:%M:%S')}",
+        'rejected_by_sampling': rejected_by_sampling,
+        'exhaustive_checks': exhaustive_checks
     }
     return max_area, max_rect
 
@@ -321,6 +322,10 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
     # Calculate rate
     rate = total_processed / elapsed_time if elapsed_time > 0 else 0
     
+    # Calculate rejection statistics
+    total_rejected = sum(info.get('rejected_by_sampling', 0) for info in progress_dict.values())
+    total_exhaustive = sum(info.get('exhaustive_checks', 0) for info in progress_dict.values())
+    
     # Get memory info
     mem = psutil.virtual_memory()
     mem_avail_gb = mem.available / (1024**3)
@@ -337,8 +342,12 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
     # Overall status line
     overall_status = f"\n[bold cyan]Overall: {overall_percent:.1f}% | Processed: {total_processed:,}/{total_work:,} | Rate: {rate:,.0f} pairs/s | Free RAM: {mem_avail_gb:.1f}GB | ETA: {eta_str}[/bold cyan]"
     
-    optimizations = "\n[green]Optimizations: Per-worker edge cache | Tile cache | 4x batches | Sorted by area | Bounding box[/green]"
-    table_title = f"Rectangle Search Progress{time_str}{overall_status}{optimizations}" if title_info else f"Rectangle Search Progress{time_str}{overall_status}{optimizations}"
+    # Statistics line
+    rejection_rate = (total_rejected / (total_rejected + total_exhaustive) * 100) if (total_rejected + total_exhaustive) > 0 else 0
+    stats_line = f"\n[bold yellow]Rejected by sampling: {total_rejected:,} ({rejection_rate:.1f}%) | Exhaustive checks: {total_exhaustive:,}[/bold yellow]"
+    
+    optimizations = "\n[green]Optimizations: Random sampling + 10M tile cache + Per-worker edge cache + Sorted by area[/green]"
+    table_title = f"Rectangle Search Progress{time_str}{overall_status}{stats_line}{optimizations}" if title_info else f"Rectangle Search Progress{time_str}{overall_status}{stats_line}{optimizations}"
     table = Table(title=table_title, show_header=True, header_style="bold magenta")
     table.add_column("Worker", style="cyan", width=20)
     table.add_column("Activity", style="white", width=50)
@@ -355,12 +364,13 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
         done = info.get('done', False)
         checking_rect = info.get('checking_rect', '')
         activity = info.get('activity', 'Idle')
+        worker_rejected = info.get('rejected_by_sampling', 0)
         
         percent = (processed / total) * 100 if total > 0 else 0
         progress_bar = '█' * int(percent // 5) + '░' * (20 - int(percent // 5))
         
         if done:
-            status = "✓ Done"
+            status = f"✓ Done (Rejected: {worker_rejected:,})"
         elif checking_rect:
             status = f"{processed}/{total} [{checking_rect}]"
         else:
@@ -385,7 +395,7 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
     
     return table
 
-def find_largest_rectangle(coords, num_processes=None, output_file="day9_part2_progress.txt"):
+def find_largest_rectangle(coords, num_processes=None):
     if num_processes is None:
         num_processes = min(40, cpu_count())  # Limit to 40 workers max to avoid resource exhaustion
     
@@ -413,16 +423,7 @@ def find_largest_rectangle(coords, num_processes=None, output_file="day9_part2_p
     console.print(f"[bold cyan]To kill (mingw64): kill -9 {main_pid}[/bold cyan]")
     console.print(f"[bold cyan]Or (Windows): taskkill /F /PID {main_pid}[/bold cyan]")
     console.print(f"[bold yellow]Press Ctrl-C or ESC to stop[/bold yellow]")
-    console.print(f"[bold yellow]Progress log: {output_file}[/bold yellow]\n")
-    
-    # Open output file and write header
-    with open(output_file, 'w') as f:
-        f.write(f"Day 9 Part 2 - Largest Rectangle Search Progress\n")
-        f.write(f"Started: {start_datetime_str}\n")
-        f.write(f"Command: {command_line}\n")
-        f.write(f"Python: {python_impl} {python_version}\n")
-        f.write(f"Processes: {num_processes}\n")
-        f.write(f"{'='*80}\n\n")
+    console.print(f"[bold green]Optimizations: Random sampling + 10M tile cache[/bold green]\n")
     
     # Pre-compute polygon bounding box for early rejection
     min_x = min(x for x, y in coords)
@@ -525,17 +526,6 @@ def find_largest_rectangle(coords, num_processes=None, output_file="day9_part2_p
                 if area > max_area:
                     max_area = area
                     max_rect = rect
-                    # Write progress to file
-                    elapsed = time.time() - start_time
-                    hours = int(elapsed // 3600)
-                    minutes = int((elapsed % 3600) // 60)
-                    seconds = int(elapsed % 60)
-                    timestamp = datetime.now().strftime("%m/%d/%Y %H:%M:%S")
-                    with open(output_file, 'a') as f:
-                        f.write(f"[{timestamp}] Elapsed: {hours:02d}:{minutes:02d}:{seconds:02d} | New max area: {max_area:,}\n")
-                        if max_rect:
-                            f.write(f"  Rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})\n")
-                        f.flush()
                 completed += 1
             
             # Stop display thread
@@ -565,22 +555,6 @@ def find_largest_rectangle(coords, num_processes=None, output_file="day9_part2_p
         console.print("\n[bold green]✓ Rectangle search complete![/bold green]")
     if max_rect:
         console.print(f"[bold yellow]Best rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})[/bold yellow]")
-    
-    # Write final result to file
-    end_datetime = datetime.now()
-    end_datetime_str = end_datetime.strftime("%m/%d/%Y %H:%M:%S")
-    total_elapsed = time.time() - start_time
-    hours = int(total_elapsed // 3600)
-    minutes = int((total_elapsed % 3600) // 60)
-    seconds = int(total_elapsed % 60)
-    with open(output_file, 'a') as f:
-        f.write(f"\n{'='*80}\n")
-        f.write(f"Finished: {end_datetime_str}\n")
-        f.write(f"Total time: {hours:02d}:{minutes:02d}:{seconds:02d}\n")
-        f.write(f"Final max area: {max_area:,}\n")
-        if max_rect:
-            f.write(f"Final rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})\n")
-    
     return max_area
 
 # Example usage:
