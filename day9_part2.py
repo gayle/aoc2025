@@ -561,6 +561,8 @@ def find_largest_rectangle(coords, output_file="day9_part2_candidates.csv", num_
             # Process results as they come in
             for result in result_iterator:
                 if stop_flag.value == 1:
+                    console.print("\n[bold red]Stop flag detected - terminating pool...[/bold red]")
+                    pool.terminate()
                     break
                 area, rect = result
                 if area > max_area:
@@ -574,7 +576,6 @@ def find_largest_rectangle(coords, output_file="day9_part2_candidates.csv", num_
     except KeyboardInterrupt:
         console.print("\n[bold red]Ctrl-C detected. Stopping all worker processes...[/bold red]")
         stop_flag.value = 1
-        time.sleep(0.5)  # Give workers a moment to see the stop flag
         pool.terminate()
         pool.join()
         console.print("[bold red]All processes terminated.[/bold red]")
@@ -585,9 +586,11 @@ def find_largest_rectangle(coords, output_file="day9_part2_candidates.csv", num_
         pool.terminate()
         pool.join()
         raise
-    else:
-        pool.close()
-        pool.join()
+    finally:
+        # Ensure pool is cleaned up
+        if stop_flag.value == 0:
+            pool.close()
+            pool.join()
     
     if stop_flag.value == 1:
         console.print("\n[bold yellow]Search stopped by user.[/bold yellow]")
