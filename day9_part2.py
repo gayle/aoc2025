@@ -88,91 +88,44 @@ def is_green_tile(x, y, coords, edge_set=None, cache=None):
 
 def validate_rectangle_with_sampling(min_rx, max_rx, min_ry, max_ry, coords, coord_set, edge_set, tile_cache):
     """
-    Validate rectangle with random sampling first for fast rejection.
-    Returns True if valid, False otherwise.
+    Validate rectangle with random sampling ONLY (1/10th of points).
+    Returns True if all sampled points are green, False otherwise.
+    NOTE: This is NOT exhaustive - it's a heuristic check only.
     """
     width = max_rx - min_rx + 1
     height = max_ry - min_ry + 1
     total_points = width * height
     
-    # Determine sample size based on rectangle size
-    if total_points < 100000:
-        sample_size = min(SAMPLE_SIZE_SMALL, total_points // 2)
-    elif total_points < 10_000_000:
-        sample_size = min(SAMPLE_SIZE_MEDIUM, total_points // 100)
-    else:
-        sample_size = min(SAMPLE_SIZE_LARGE, total_points // 1000)
+    # Sample exactly 1/10th of the points
+    sample_size = max(10, total_points // 10)  # At least 10 samples
     
-    # Phase 1: Random sampling for fast rejection
-    if sample_size > 10:  # Only sample if it's worth the overhead
-        sampled_points = set()
-        attempts = 0
-        max_attempts = sample_size * 3  # Avoid infinite loop
-        
-        while len(sampled_points) < sample_size and attempts < max_attempts:
-            x = random.randint(min_rx, max_rx)
-            y = random.randint(min_ry, max_ry)
-            if (x, y) not in sampled_points:
-                sampled_points.add((x, y))
-                
-                # Check if this point is green
-                if (x, y) not in coord_set and not is_green_tile(x, y, coords, edge_set, tile_cache):
-                    return False  # Fast rejection!
+    # Random sampling - reject if any sampled point is not green
+    sampled_points = set()
+    attempts = 0
+    max_attempts = sample_size * 3  # Avoid infinite loop
+    
+    while len(sampled_points) < sample_size and attempts < max_attempts:
+        x = random.randint(min_rx, max_rx)
+        y = random.randint(min_ry, max_ry)
+        if (x, y) not in sampled_points:
+            sampled_points.add((x, y))
             
-            attempts += 1
+            # Check if this point is green
+            if (x, y) not in coord_set and not is_green_tile(x, y, coords, edge_set, tile_cache):
+                return False  # Reject!
+        
+        attempts += 1
     
-    # Phase 2: Vectorized row-wise check - build and validate rows
-    # Check rows more efficiently by building contiguous ranges
-    for y in range(min_ry, max_ry + 1):
-        # Build set of all green x coordinates in this row within our rectangle bounds
-        row_xs = set()
-        for x in range(min_rx, max_rx + 1):
-            if (x, y) in coord_set or is_green_tile(x, y, coords, edge_set, tile_cache):
-                row_xs.add(x)
-        
-        # Convert to sorted list for vectorized range check
-        row_list = sorted(row_xs)
-        
-        # Check if we have a contiguous range from min_rx to max_rx
-        expected_len = width
-        
-        # Quick check: if we don't have enough elements, it's invalid
-        if len(row_list) < expected_len:
-            return False
-        
-        # Binary search for min_rx
-        left, right = 0, len(row_list) - 1
-        start_idx = -1
-        
-        while left <= right:
-            mid = (left + right) // 2
-            if row_list[mid] == min_rx:
-                start_idx = mid
-                break
-            elif row_list[mid] < min_rx:
-                left = mid + 1
-            else:
-                right = mid - 1
-        
-        # If min_rx not found, invalid
-        if start_idx == -1:
-            return False
-        
-        # Check if we have enough elements after start_idx
-        if start_idx + expected_len > len(row_list):
-            return False
-        
-        # Compare slices - vectorized comparison is much faster
-        expected_range = list(range(min_rx, max_rx + 1))
-        actual_slice = row_list[start_idx:start_idx + expected_len]
-        if actual_slice != expected_range:
-            return False
+    # If we couldn't get enough samples, reject
+    if len(sampled_points) < sample_size:
+        return False
     
+    # All sampled points were green
     return True
 
 def check_rectangle_batch(args):
-    """Check a batch of rectangle pairs."""
-    pairs, coords, coord_set, bbox, progress_dict, batch_id, stop_flag = args
+    """Check a batch of rectangle pairs and write candidates to file."""
+    pairs, coords, coord_set, bbox, progress_dict, batch_id, stop_flag, output_file = args
     min_x, max_x, min_y, max_y = bbox
     max_area = 0
     max_rect = None
@@ -180,13 +133,16 @@ def check_rectangle_batch(args):
     # Compute edge set locally to avoid copying large data on Windows
     edge_set = compute_edge_set(coords)
     
-    # Create local cache for this worker - increased to 10M limit (vs original 10M)
+    # Create local cache for this worker
     tile_cache = {}
     CACHE_SIZE_LIMIT = 10_000_000  # Max 10M cached points (~160MB with 16 bytes per entry)
     
     # Statistics
     rejected_by_sampling = 0
-    exhaustive_checks = 0
+    passed_sampling = 0
+    
+    # Local list to accumulate valid rectangles before writing
+    valid_rectangles = []
     
     # Progress tracking for this worker
     import os
@@ -203,7 +159,8 @@ def check_rectangle_batch(args):
         'max_area': 0,
         'name': process_name,
         'activity': 'Starting...',
-        'rejected_by_sampling': 0
+        'rejected_by_sampling': 0,
+        'passed_sampling': 0
     }
     
     for i, j in pairs:
@@ -216,8 +173,14 @@ def check_rectangle_batch(args):
                 'name': process_name,
                 'stopped': True,
                 'activity': 'Stopped by user',
-                'rejected_by_sampling': rejected_by_sampling
+                'rejected_by_sampling': rejected_by_sampling,
+                'passed_sampling': passed_sampling
             }
+            # Write any accumulated results before stopping
+            if valid_rectangles:
+                with open(output_file, 'a') as f:
+                    for rect_line in valid_rectangles:
+                        f.write(rect_line)
             return max_area, max_rect
         
         processed += 1
@@ -231,9 +194,11 @@ def check_rectangle_batch(args):
                 'max_area': max_area,
                 'name': process_name,
                 'activity': 'Checking pairs',
-                'rejected_by_sampling': rejected_by_sampling
+                'rejected_by_sampling': rejected_by_sampling,
+                'passed_sampling': passed_sampling
             }
             last_update_time = current_time
+        
         x1, y1 = coords[i]
         x2, y2 = coords[j]
         
@@ -264,7 +229,8 @@ def check_rectangle_batch(args):
             'max_area': max_area,
             'name': process_name,
             'activity': f'Checking corners: {area:,} area',
-            'rejected_by_sampling': rejected_by_sampling
+            'rejected_by_sampling': rejected_by_sampling,
+            'passed_sampling': passed_sampling
         }
         
         # Batch check both corners (fast rejection)
@@ -278,7 +244,7 @@ def check_rectangle_batch(args):
         if not valid_corners:
             continue
         
-        # Check rectangle with sampling optimization
+        # Check rectangle with sampling (1/10th of points)
         total_points = (max_rx - min_rx + 1) * (max_ry - min_ry + 1)
         rect_start_time = time.time()
         
@@ -288,8 +254,9 @@ def check_rectangle_batch(args):
             'total': total_pairs,
             'max_area': max_area,
             'name': process_name,
-            'activity': f'Validating: {area:,} area ({total_points:,} points)',
-            'rejected_by_sampling': rejected_by_sampling
+            'activity': f'Sampling: {area:,} area ({total_points//10:,}/{total_points:,} points)',
+            'rejected_by_sampling': rejected_by_sampling,
+            'passed_sampling': passed_sampling
         }
         
         # For very large rectangles, manage cache size
@@ -303,22 +270,12 @@ def check_rectangle_batch(args):
         if not valid:
             rejected_by_sampling += 1
         else:
-            exhaustive_checks += 1
-        
-        # Prevent cache from growing unbounded - clear if it exceeds limit
-        if use_cache and len(tile_cache) > CACHE_SIZE_LIMIT:
-            tile_cache.clear()
-            progress_dict[batch_id] = {
-                'processed': processed,
-                'total': total_pairs,
-                'max_area': max_area,
-                'name': process_name,
-                'activity': f'🧹 Cleared cache ({CACHE_SIZE_LIMIT:,} limit)',
-                'rejected_by_sampling': rejected_by_sampling
-            }
-        
-        if valid:
+            passed_sampling += 1
+            # Write this rectangle to our local list
             rect_elapsed = time.time() - rect_start_time
+            rect_line = f"{min_rx},{min_ry},{max_rx},{max_ry},{area}\n"
+            valid_rectangles.append(rect_line)
+            
             if area > max_area:
                 max_area = area
                 max_rect = (min_rx, min_ry, max_rx, max_ry)
@@ -329,8 +286,35 @@ def check_rectangle_batch(args):
                     'max_area': max_area,
                     'name': process_name,
                     'activity': f'✓ New best! {area:,} in {rect_elapsed:.1f}s',
-                    'rejected_by_sampling': rejected_by_sampling
+                    'rejected_by_sampling': rejected_by_sampling,
+                    'passed_sampling': passed_sampling
                 }
+        
+        # Prevent cache from growing unbounded - clear if it exceeds limit
+        if use_cache and len(tile_cache) > CACHE_SIZE_LIMIT:
+            tile_cache.clear()
+            progress_dict[batch_id] = {
+                'processed': processed,
+                'total': total_pairs,
+                'max_area': max_area,
+                'name': process_name,
+                'activity': f'🧹 Cleared cache ({CACHE_SIZE_LIMIT:,} limit)',
+                'rejected_by_sampling': rejected_by_sampling,
+                'passed_sampling': passed_sampling
+            }
+        
+        # Write to file periodically (every 100 valid rectangles)
+        if len(valid_rectangles) >= 100:
+            with open(output_file, 'a') as f:
+                for rect_line in valid_rectangles:
+                    f.write(rect_line)
+            valid_rectangles.clear()
+    
+    # Write any remaining rectangles
+    if valid_rectangles:
+        with open(output_file, 'a') as f:
+            for rect_line in valid_rectangles:
+                f.write(rect_line)
     
     # Final progress update
     progress_dict[batch_id] = {
@@ -341,7 +325,7 @@ def check_rectangle_batch(args):
         'done': True,
         'activity': f"Completed at {time.strftime('%m/%d/%Y %H:%M:%S')}",
         'rejected_by_sampling': rejected_by_sampling,
-        'exhaustive_checks': exhaustive_checks
+        'passed_sampling': passed_sampling
     }
     return max_area, max_rect
 
@@ -387,8 +371,7 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
     rejection_rate = (total_rejected / (total_rejected + total_exhaustive) * 100) if (total_rejected + total_exhaustive) > 0 else 0
     stats_line = f"\n[bold yellow]Rejected by sampling: {total_rejected:,} ({rejection_rate:.1f}%) | Exhaustive checks: {total_exhaustive:,}[/bold yellow]"
     
-    optimizations = "\n[green]Optimizations: Random sampling + 10M tile cache + Per-worker edge cache + Sorted by area[/green]"
-    table_title = f"Rectangle Search Progress{time_str}{overall_status}{stats_line}{optimizations}" if title_info else f"Rectangle Search Progress{time_str}{overall_status}{stats_line}{optimizations}"
+    table_title = f"Rectangle Search Progress{time_str}{overall_status}{stats_line}" if title_info else f"Rectangle Search Progress{time_str}{overall_status}{stats_line}{optimizations}"
     table = Table(title=table_title, show_header=True, header_style="bold magenta")
     table.add_column("Worker", style="cyan", width=20)
     table.add_column("Activity", style="white", width=50)
@@ -436,12 +419,13 @@ def generate_progress_table(progress_dict, max_area, title_info="", elapsed_time
     
     return table
 
-def find_largest_rectangle(coords, num_processes=None):
+def find_largest_rectangle(coords, output_file="day9_part2_candidates.csv", num_processes=None):
     if num_processes is None:
         num_processes = min(40, cpu_count())  # Limit to 40 workers max to avoid resource exhaustion
     
     console = Console()
     import os
+    import subprocess
     main_pid = os.getpid()
     
     # Get command line
@@ -451,20 +435,35 @@ def find_largest_rectangle(coords, num_processes=None):
     python_impl = sys.implementation.name
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     
+    # Get last git commit
+    try:
+        git_commit = subprocess.check_output(['git', 'log', '-1', '--oneline'], 
+                                            stderr=subprocess.DEVNULL, 
+                                            text=True).strip()
+    except:
+        git_commit = "No git info available"
+    
     # Get start time
     from datetime import datetime
     start_datetime = datetime.now()
     start_datetime_str = start_datetime.strftime("%m/%d/%Y %H:%M:%S")
     
+    # Clear/create output file
+    with open(output_file, 'w') as f:
+        f.write("# Rectangle candidates (sampling only - 1/10th of points checked)\n")
+        f.write("# Format: min_x,min_y,max_x,max_y,area\n")
+
     console.print(f"[bold]Command: {command_line}[/bold]")
     console.print(f"[bold magenta]Python: {python_impl} {python_version}[/bold magenta]")
+    console.print(f"[bold blue]Git: {git_commit}[/bold blue]")
     console.print(f"[bold yellow]Started: {start_datetime_str}[/bold yellow]")
     console.print(f"[bold green]Using {num_processes} processes[/bold green]")
     console.print(f"[bold cyan]Main Process PID: {main_pid}[/bold cyan]")
     console.print(f"[bold cyan]To kill (mingw64): kill -9 {main_pid}[/bold cyan]")
     console.print(f"[bold cyan]Or (Windows): taskkill /F /PID {main_pid}[/bold cyan]")
     console.print(f"[bold yellow]Press Ctrl-C or ESC to stop[/bold yellow]")
-    console.print(f"[bold green]Optimizations: Random sampling + 10M tile cache[/bold green]\n")
+    console.print(f"[bold red]⚠ SAMPLING ONLY: Checking 1/10th of points per rectangle (NOT exhaustive)[/bold red]")
+    console.print(f"[bold green]Output file: {output_file}[/bold green]\n")
     
     # Pre-compute polygon bounding box for early rejection
     min_x = min(x for x, y in coords)
@@ -521,7 +520,7 @@ def find_largest_rectangle(coords, num_processes=None):
     batches = []
     for batch_id, i in enumerate(range(0, len(pairs), batch_size)):
         batch = pairs[i:i + batch_size]
-        batches.append((batch, coords, coord_set, bbox, progress_dict, batch_id, stop_flag))
+        batches.append((batch, coords, coord_set, bbox, progress_dict, batch_id, stop_flag, output_file))
     
     console.print(f"[bold]Split into {len(batches)} batches[/bold]\n")
     
@@ -596,6 +595,7 @@ def find_largest_rectangle(coords, num_processes=None):
         console.print("\n[bold green]✓ Rectangle search complete![/bold green]")
     if max_rect:
         console.print(f"[bold yellow]Best rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})[/bold yellow]")
+    console.print(f"[bold green]Results written to: {output_file}[/bold green]")
     return max_area
 
 # Example usage:
