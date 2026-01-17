@@ -453,17 +453,18 @@ def find_largest_rectangle(coords, output_file="day9_part2_candidates.csv", num_
         f.write("# Rectangle candidates (sampling only - 1/10th of points checked)\n")
         f.write("# Format: min_x,min_y,max_x,max_y,area\n")
 
-    console.print(f"[bold]Command: {command_line}[/bold]")
-    console.print(f"[bold magenta]Python: {python_impl} {python_version}[/bold magenta]")
-    console.print(f"[bold blue]Git: {git_commit}[/bold blue]")
+    console.print(f"[bold yellow]Press Ctrl-C or ESC to stop[/bold yellow]")
     console.print(f"[bold yellow]Started: {start_datetime_str}[/bold yellow]")
-    console.print(f"[bold green]Using {num_processes} processes[/bold green]")
+    console.print(f"[bold yellow]Command: {command_line}[/bold yellow]")
+    console.print(f"[bold yellow]Python: {python_impl} {python_version}[/bold yellow]")
+    console.print(f"[bold yellow]Git: {git_commit}[/bold yellow]")
+    console.print(f"[bold yellow]Output file: {output_file}[/bold yellow]\n")
+    
+    console.print(f"[bold cyan]Using {num_processes} processes[/bold cyan]")
     console.print(f"[bold cyan]Main Process PID: {main_pid}[/bold cyan]")
     console.print(f"[bold cyan]To kill (mingw64): kill -9 {main_pid}[/bold cyan]")
     console.print(f"[bold cyan]Or (Windows): taskkill /F /PID {main_pid}[/bold cyan]")
-    console.print(f"[bold yellow]Press Ctrl-C or ESC to stop[/bold yellow]")
     console.print(f"[bold red]⚠ SAMPLING ONLY: Checking 1/10th of points per rectangle (NOT exhaustive)[/bold red]")
-    console.print(f"[bold green]Output file: {output_file}[/bold green]\n")
     
     # Pre-compute polygon bounding box for early rejection
     min_x = min(x for x, y in coords)
@@ -482,7 +483,7 @@ def find_largest_rectangle(coords, output_file="day9_part2_candidates.csv", num_
     pairs = [(i, j) for i in range(len(coords)) for j in range(i + 1, len(coords))]
     
     # Sort pairs by potential area (descending) - check largest rectangles first
-    console.print(f"[bold yellow]Sorting {len(pairs):,} pairs by potential area...[/bold yellow]")
+    console.print(f"[bold]Sorting {len(pairs):,} pairs by potential area...[/bold]")
     def pair_area(pair):
         i, j = pair
         x1, y1 = coords[i]
@@ -561,9 +562,7 @@ def find_largest_rectangle(coords, output_file="day9_part2_candidates.csv", num_
             # Process results as they come in
             for result in result_iterator:
                 if stop_flag.value == 1:
-                    console.print("\n[bold red]Stop flag detected - terminating pool...[/bold red]")
-                    pool.terminate()
-                    break
+                    break  # Exit loop immediately
                 area, rect = result
                 if area > max_area:
                     max_area = area
@@ -576,26 +575,18 @@ def find_largest_rectangle(coords, output_file="day9_part2_candidates.csv", num_
     except KeyboardInterrupt:
         console.print("\n[bold red]Ctrl-C detected. Stopping all worker processes...[/bold red]")
         stop_flag.value = 1
-        pool.terminate()
-        pool.join()
-        console.print("[bold red]All processes terminated.[/bold red]")
-        sys.exit(1)
-    except Exception as e:
-        console.print(f"\n[bold red]Error occurred: {e}[/bold red]")
-        stop_flag.value = 1
-        pool.terminate()
-        pool.join()
-        raise
-    finally:
-        # Ensure pool is cleaned up
-        if stop_flag.value == 0:
-            pool.close()
-            pool.join()
     
+    # Always terminate/close pool outside the Live context
     if stop_flag.value == 1:
-        console.print("\n[bold yellow]Search stopped by user.[/bold yellow]")
+        console.print("\n[bold red]Terminating worker processes...[/bold red]")
+        pool.terminate()
+        pool.join(timeout=5)  # Wait up to 5 seconds
+        console.print("[bold yellow]Search stopped by user.[/bold yellow]")
     else:
         console.print("\n[bold green]✓ Rectangle search complete![/bold green]")
+        pool.close()
+        pool.join()
+    
     if max_rect:
         console.print(f"[bold yellow]Best rectangle: ({max_rect[0]},{max_rect[1]}) to ({max_rect[2]},{max_rect[3]})[/bold yellow]")
     console.print(f"[bold green]Results written to: {output_file}[/bold green]")
@@ -630,7 +621,6 @@ if __name__ == "__main__":
             input_text = f.read()
         coords = parse_input(input_text)
         console = Console()
-        console.print(f"[bold]Number of vertices: {len(coords)}[/bold]")
         result = find_largest_rectangle(coords)
         console.print(f"[bold green]Day 9 Part 2 result: {result}[/bold green]")
     except KeyboardInterrupt:
