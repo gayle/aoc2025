@@ -540,7 +540,8 @@ def find_largest_rectangle(coords, output_file="day9_part2_candidates.csv", num_
     pool = Pool(processes=num_processes, maxtasksperchild=1)
     
     # Start the work by creating the iterator (this starts workers processing)
-    result_iterator = pool.imap_unordered(check_rectangle_batch, batches)
+    # Use chunksize=1 to prevent queuing too many results in memory
+    result_iterator = pool.imap_unordered(check_rectangle_batch, batches, chunksize=1)
     
     # Give workers a moment to start and update their status
     time.sleep(0.5)
